@@ -295,8 +295,12 @@ def get_historical_fault_events(pump_id):
     ) as file:
         alerts = json.load(file)
 
-    return [
-        {
+    fault_events = []
+    for alert in alerts:
+        if alert.get("phase") != "alert":
+            continue
+
+        event = {
             "fault": alert["fault_type"],
             "timestamp": (
                 alert.get("alert_time_utc")
@@ -307,6 +311,9 @@ def get_historical_fault_events(pump_id):
             "evidence": alert.get("evidence"),
             "recommended_action": alert.get("recommended_action"),
         }
-        for alert in alerts
-        if alert.get("phase") == "alert"
-    ]
+        severity = alert.get("severity")
+        if severity is not None:
+            event["severity"] = severity
+        fault_events.append(event)
+
+    return fault_events

@@ -22,6 +22,13 @@ from utils.alert_display import render_alert_mini_player, render_alert_status
 
 from utils.replay_progress import REPLAY_STAGES, get_replay_stage_index
 
+from utils.what_if import (
+    ACTION_LABELS,
+    hypothesis_bounds,
+    run_historical_what_if,
+    scenario_for_fault,
+)
+
 from utils.ui_components import (
     setup_page,
     render_sidebar,
@@ -29,6 +36,98 @@ from utils.ui_components import (
 )
 
 REPLAY_SESSION_KEY = "history_replay_session"
+WHAT_IF_RESULT_KEY = "history_what_if_result"
+
+
+def _format_what_if_value(
+    value,
+    *,
+    suffix="",
+    multiplier=1.0,
+    precision=2,
+):
+    if value is None:
+        return "N/A"
+    return f"{float(value) * multiplier:.{precision}f}{suffix}"
+
+
+def _render_what_if_result(result):
+    if result.get("accepted"):
+        st.success(
+            "The proposal passed the sandbox checks. "
+            "This is not field approval."
+        )
+    else:
+        st.error("The proposal did not pass the sandbox checks.")
+
+    for reason in result.get("rejection_reasons", []):
+        st.error(reason)
+
+    for warning in result.get("warnings", []):
+        st.warning(warning)
+
+    baseline = result.get("baseline")
+    proposed = result.get("proposed")
+    if not isinstance(baseline, dict) or not isinstance(proposed, dict):
+        st.info("The sandbox did not produce a baseline/proposed comparison.")
+        return
+
+    metric_fields = (
+        ("Flow", "flow_m3h", " m3/h", 1.0, 1),
+        ("Required flow", "flow_required_m3h", " m3/h", 1.0, 1),
+        ("Duty satisfaction", "duty_satisfaction", "%", 100.0, 1),
+        ("Input power", "input_kw", " kW", 1.0, 2),
+        ("Energy cost per day", "energy_eur_per_day", " EUR/day", 1.0, 2),
+        ("NPSH margin ratio", "npsh_margin", "", 1.0, 2),
+        ("Vibration RMS", "vib_rms_mm_s", " mm/s", 1.0, 2),
+        ("Bearing temperature", "bearing_temp_c", " C", 1.0, 1),
+        ("Risk proxy (not probability)", "risk_proxy", "", 1.0, 3),
+    )
+    rows = [
+        {
+            "Measure": label,
+            "Baseline": _format_what_if_value(
+                baseline.get(field),
+                suffix=suffix,
+                multiplier=multiplier,
+                precision=precision,
+            ),
+            "Proposed": _format_what_if_value(
+                proposed.get(field),
+                suffix=suffix,
+                multiplier=multiplier,
+                precision=precision,
+            ),
+        }
+        for label, field, suffix, multiplier, precision in metric_fields
+    ]
+
+    intervention = result.get("intervention", {})
+    estimated_cost = intervention.get("estimated_cost_eur")
+    if estimated_cost is not None:
+        rows.append(
+            {
+                "Measure": "One-time estimated intervention cost",
+                "Baseline": "N/A",
+                "Proposed": _format_what_if_value(
+                    estimated_cost,
+                    suffix=" EUR",
+                    precision=0,
+                ),
+            }
+        )
+
+    st.dataframe(
+        pd.DataFrame(rows),
+        width="stretch",
+        hide_index=True,
+    )
+
+    caveats = result.get("caveats", [])
+    if caveats:
+        st.markdown("**Model caveats**")
+        for caveat in caveats:
+            st.caption(caveat)
 
 
 @st.dialog("Pump simulator replay", width="large")
@@ -126,6 +225,11 @@ requested_target_timestamp = st.session_state.pop(
 
 requested_fault_name = st.session_state.pop(
     "selected_fault",
+    None
+)
+
+requested_fault_severity = st.session_state.pop(
+    "history_fault_severity",
     None
 )
 
@@ -244,6 +348,7 @@ if pump_changed:
     # Clear fault information from the previously selected pump
     st.session_state.pop("replay_fault_name", None)
     st.session_state.pop("replay_fault_timestamp", None)
+    st.session_state.pop("replay_fault_severity", None)
 
 
 # Initialize if not already available
@@ -322,6 +427,13 @@ if requested_target_timestamp is not None:
         )
 
         st.session_state["replay_fault_timestamp"] = target_display
+
+        if requested_fault_severity is not None:
+            st.session_state["replay_fault_severity"] = (
+                requested_fault_severity
+            )
+        else:
+            st.session_state.pop("replay_fault_severity", None)
 
         # Warn if the requested event is outside the available data
         if target_display < first_timestamp or target_display > last_timestamp:
@@ -411,6 +523,7 @@ if search_clicked:
     # Manual search clears the previously selected fault marker
     st.session_state.pop("replay_fault_name", None)
     st.session_state.pop("replay_fault_timestamp", None)
+    st.session_state.pop("replay_fault_severity", None)
 
     st.rerun()
 
@@ -451,6 +564,7 @@ with col1:
 
         st.session_state.pop("replay_fault_name", None)
         st.session_state.pop("replay_fault_timestamp", None)
+        st.session_state.pop("replay_fault_severity", None)
 
         st.rerun()
 
@@ -475,6 +589,7 @@ with col2:
 
         st.session_state.pop("replay_fault_name", None)
         st.session_state.pop("replay_fault_timestamp", None)
+        st.session_state.pop("replay_fault_severity", None)
 
         st.rerun()
 
@@ -547,14 +662,22 @@ replay_fault_name = st.session_state.get(
 replay_fault_timestamp = st.session_state.get(
     "replay_fault_timestamp"
 )
+replay_fault_severity = st.session_state.get(
+    "replay_fault_severity"
+)
 
 if replay_fault_name and replay_fault_timestamp is not None:
-
-    st.warning(
+    fault_event_message = (
         f"Fault event: **{replay_fault_name}**  \n"
         f"Event timestamp: "
         f"{replay_fault_timestamp.strftime('%d %B %Y, %H:%M:%S UTC')}"
     )
+    if (
+        replay_fault_severity is not None
+        and str(replay_fault_severity).strip()
+    ):
+        fault_event_message += f"  \nAlert severity: {replay_fault_severity}"
+    st.warning(fault_event_message)
 
 
 # ==================================================
@@ -587,6 +710,97 @@ c3.metric(
     f"{temperature:.1f} °C"
     if pd.notna(temperature) else "N/A"
 )
+
+if replay_fault_name and replay_fault_timestamp is not None:
+    with st.expander(
+        "🧪 Try a what-if: explore a maintenance action",
+        expanded=True,
+    ):
+        st.caption(
+            "Evaluate a hypothetical action at the selected historical "
+            "operating point. This simulation does not control equipment "
+            "or replay the future fault progression."
+        )
+        st.write(
+            f"Pump: **{pump}**  \n"
+            f"Selected simulation time: "
+            f"**{selected_timestamp_utc.strftime('%d %B %Y, %H:%M:%S UTC')}**"
+        )
+
+        scenario = scenario_for_fault(replay_fault_name)
+        if scenario is None:
+            st.info(
+                f"What-if analysis is not available for "
+                f"{replay_fault_name}. The simulator only covers selected "
+                "mechanical and hydraulic fault hypotheses."
+            )
+        else:
+            hypothesis_key, allowed_actions = scenario
+            lower, upper = hypothesis_bounds(hypothesis_key)
+            event_key = pd.Timestamp(replay_fault_timestamp).strftime(
+                "%Y%m%dT%H%M%S"
+            )
+            form_key = (
+                f"history_what_if_{pump}_{replay_fault_name}_{event_key}"
+            )
+
+            with st.form(key=form_key):
+                action = st.selectbox(
+                    "Action to evaluate",
+                    allowed_actions,
+                    format_func=lambda item: ACTION_LABELS[item],
+                    key=f"{form_key}_action",
+                )
+                hypothesis_value = st.text_input(
+                    f"Assumed {hypothesis_key} model value "
+                    f"({lower:g} to {upper:g})",
+                    placeholder="Required",
+                    help=(
+                        "This is a user-supplied model assumption, not a "
+                        "measured value. Alert confidence or categorical "
+                        "severity is not converted into this number."
+                    ),
+                    key=f"{form_key}_hypothesis",
+                )
+                st.caption(
+                    "The numeric condition assumption is separate from any "
+                    "severity field supplied by the alert."
+                )
+                submitted = st.form_submit_button(
+                    "Run what-if simulation",
+                    type="primary",
+                )
+
+            scenario_signature = (
+                pump,
+                replay_fault_name,
+                selected_timestamp_utc.isoformat(),
+                action,
+                hypothesis_value.strip(),
+            )
+            if submitted:
+                try:
+                    result = run_historical_what_if(
+                        pump,
+                        selected_timestamp_utc.isoformat(),
+                        replay_fault_name,
+                        action,
+                        hypothesis_value,
+                    )
+                except (FileNotFoundError, ValueError) as error:
+                    st.error(str(error))
+                else:
+                    st.session_state[WHAT_IF_RESULT_KEY] = {
+                        "signature": scenario_signature,
+                        "result": result,
+                    }
+
+            stored_result = st.session_state.get(WHAT_IF_RESULT_KEY)
+            if (
+                stored_result is not None
+                and stored_result.get("signature") == scenario_signature
+            ):
+                _render_what_if_result(stored_result["result"])
 
 if st.button(
     "▶ Replay",

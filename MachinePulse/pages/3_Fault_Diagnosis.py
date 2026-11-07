@@ -340,6 +340,10 @@ if historical_fault_events:
                         "selected_fault"
                     ] = fault_name
 
+                    st.session_state[
+                        "history_fault_severity"
+                    ] = event.get("severity")
+
                     # Navigate to History Replay
                     st.switch_page(
                         "pages/5_History_Replay.py"
