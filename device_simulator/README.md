@@ -70,6 +70,10 @@ of replay minutes scanned; warm-up minutes do not count toward the limit. To
 use the console command after changing an existing installation, reinstall
 the package with `python -m pip install -e .`.
 
+By default, predictor history begins up to 24 hours before `--start`. Set
+`--model-history-start` to use an earlier history window. Alerts are still
+written only for minutes at or after `--start`.
+
 ## Minute aggregation and predictions
 
 Telemetry samples are grouped by their UTC minute. Each numeric telemetry
@@ -83,10 +87,30 @@ When a predictor is enabled, the simulator first feeds it up to 24 hours of
 telemetry before the replay start as warm-up; those warm-up minutes are not
 published and do not count toward `--limit`. If less than 24 hours of prior
 data is available, the model continues learning as replay proceeds. The
-learning-only warm-up is buffered without scoring each historical minute, then
-scored when replay begins. Warm-up start, progress, and completion are logged.
-Each replay-minute prediction is printed to the console as JSON, including
-no-alert results with `fault_type: null`.
+included PolarMind adapter buffers warm-up history rather than scoring each
+historical minute, then starts predicting when replay begins. Warm-up start,
+progress, and completion are logged. Each replay-minute prediction is printed
+to the console as JSON, including no-alert results with `fault_type: null`.
+
+Use `--model-history-start` to feed the predictor more than the default 24 hours
+before the first published minute. This is useful for reproducing an offline
+scan: use the same model-history start as the scan, set `--start` to the first
+minute you want to publish, and the intervening minutes will update the
+predictor without being sent to AWS. For example:
+
+```sh
+device-simulator \
+  --data data/full \
+  --asset PUMP-06 \
+  --model-history-start 2025-10-07T13:50:00Z \
+  --start 2025-10-09T21:45:00Z \
+  --speed 60
+```
+
+If the offline scan used its default history window, pass the scan's `--start`
+minus 24 hours as `--model-history-start`. The replay still uses the model's
+original baseline and all subsequent context, but publishes only from the new
+`--start`.
 
 `--speed 1` publishes one minute of telemetry per minute of wall-clock time;
 `--speed 0` publishes as fast as possible. `--limit` caps published minute
@@ -127,7 +151,8 @@ The simulator subscribes to `devices/PUMP-06/replay`. Send a JSON object with a
 The simulator starts replaying the dataset from `--start` (the default start
 timestamp shown above) as soon as it subscribes. Each valid request starts
 another replay from the supplied timestamp (inclusive). Before each replay, the
-selected predictor is reset and warmed with up to 24 hours of prior telemetry.
+selected predictor is reset and warmed from `--model-history-start` when set,
+or with up to 24 hours of prior telemetry otherwise.
 If a request arrives while another replay is running, the active replay is
 stopped before the new one starts. Requests are handled in arrival order, so a
 newer request supersedes any replay started by an older request that is still

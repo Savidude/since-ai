@@ -153,6 +153,7 @@ def iter_replay_minutes(
     end: str | None = None,
     limit: int | None = None,
     warmup_hours: int = 0,
+    history_start: str | None = None,
 ) -> Iterator[ReplayMinute]:
     if warmup_hours < 0:
         raise ValueError("warmup_hours must be non-negative.")
@@ -161,15 +162,22 @@ def iter_replay_minutes(
 
     replay_start = _utc_timestamp(start) if start else None
     replay_minute = replay_start.floor("min") if replay_start is not None else None
-    if warmup_hours and replay_minute is None:
-        raise ValueError("A replay start timestamp is required when warming up a predictor.")
+    if (warmup_hours or history_start is not None) and replay_minute is None:
+        raise ValueError("A replay start timestamp is required when loading model history.")
 
     load_start = start
-    if warmup_hours and replay_minute is not None:
+    if history_start is not None:
+        if replay_minute is None:
+            raise ValueError("A replay start timestamp is required when loading model history.")
+        history_timestamp = _utc_timestamp(history_start)
+        if history_timestamp > replay_minute:
+            raise ValueError("Model history start must be at or before the replay start.")
+        load_start = history_timestamp.isoformat()
+    elif warmup_hours and replay_minute is not None:
         load_start = (replay_minute - pd.Timedelta(hours=warmup_hours)).isoformat()
     df = _load(data_dir, asset, load_start, end)
 
-    if replay_minute is not None and warmup_hours:
+    if replay_minute is not None and (warmup_hours or history_start is not None):
         warmup_df = df[df["timestamp_utc"] < replay_minute]
         replay_df = df[df["timestamp_utc"] >= replay_start]
     else:

@@ -17,9 +17,8 @@ from .replay import DEFAULT_START, iter_replay_minutes
 LOGGER = logging.getLogger(__name__)
 
 
-def _print_prediction(prediction: dict[str, object], *, warmup: bool = False) -> None:
-    label = "Warm-up prediction" if warmup else "Prediction"
-    print(f"{label}: {json.dumps(prediction, separators=(',', ':'))}", flush=True)
+def _print_prediction(prediction: dict[str, object]) -> None:
+    print(f"Prediction: {json.dumps(prediction, separators=(',', ':'))}", flush=True)
 
 
 def publish_replay_telemetry(
@@ -29,6 +28,7 @@ def publish_replay_telemetry(
     data_dir: str | Path,
     asset: str,
     start: str | None = DEFAULT_START,
+    model_history_start: str | None = None,
     end: str | None = None,
     limit: int | None = None,
     speed: float = 1.0,
@@ -40,7 +40,10 @@ def publish_replay_telemetry(
 
     LOGGER.info("Replaying telemetry as %s to %s", device.thing_name, device.topic)
     if predictor is not None:
-        LOGGER.info("Warming predictor with up to 24 hours of prior telemetry")
+        if model_history_start is None:
+            LOGGER.info("Warming predictor with up to 24 hours of prior telemetry")
+        else:
+            LOGGER.info("Loading predictor history from %s", model_history_start)
     previous_timestamp: datetime | None = None
     published = 0
     warmup_minutes = 0
@@ -52,15 +55,14 @@ def publish_replay_telemetry(
         end,
         limit,
         warmup_hours=24 if predictor is not None else 0,
+        history_start=model_history_start if predictor is not None else None,
     ):
         if stop_event is not None and stop_event.is_set():
             break
         if minute.is_warmup:
             if predictor is not None:
                 warmup_minutes += 1
-                prediction = predictor.process_minute(minute)
-                if prediction is not None and prediction.get("fault_type") is not None:
-                    _print_prediction(dict(prediction), warmup=True)
+                predictor.process_minute(minute)
                 if warmup_minutes % 360 == 0:
                     LOGGER.info("Predictor warm-up processed %d prior minutes", warmup_minutes)
             continue

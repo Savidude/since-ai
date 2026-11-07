@@ -40,6 +40,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Replay start timestamp, inclusive (default: {DEFAULT_START}).",
     )
     parser.add_argument(
+        "--model-history-start",
+        help=(
+            "Earliest timestamp fed to the predictor; defaults to up to 24 hours "
+            "before --start."
+        ),
+    )
+    parser.add_argument(
         "--end",
         help="Optional replay end timestamp, exclusive.",
     )
@@ -77,12 +84,17 @@ def scan_alerts(
     limit: int | None,
     predictor: PredictorAdapter,
     output: str | Path,
+    model_history_start: str | None = None,
 ) -> int:
     alerts: list[dict[str, object]] = []
     warmup_minutes = 0
     replay_minutes = 0
 
     LOGGER.info("Scanning local telemetry for %s without AWS publishing", asset)
+    if model_history_start is None:
+        LOGGER.info("Using up to 24 hours before %s as predictor history", start)
+    else:
+        LOGGER.info("Using predictor history from %s", model_history_start)
     for minute in iter_replay_minutes(
         data_dir,
         asset,
@@ -90,16 +102,18 @@ def scan_alerts(
         end,
         limit,
         warmup_hours=24,
+        history_start=model_history_start,
     ):
         prediction = predictor.process_minute(minute)
         if minute.is_warmup:
             warmup_minutes += 1
             if warmup_minutes % 360 == 0:
                 LOGGER.info("Processed %d predictor warm-up minutes", warmup_minutes)
-        else:
-            replay_minutes += 1
-            if replay_minutes % 360 == 0:
-                LOGGER.info("Scanned %d replay minutes", replay_minutes)
+            continue
+
+        replay_minutes += 1
+        if replay_minutes % 360 == 0:
+            LOGGER.info("Scanned %d replay minutes", replay_minutes)
 
         if prediction is None or prediction.get("fault_type") is None:
             continue
@@ -153,6 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             data_dir=args.data,
             asset=args.asset,
             start=args.start,
+            model_history_start=args.model_history_start,
             end=args.end,
             limit=args.limit,
             predictor=predictor,

@@ -32,7 +32,7 @@ def test_offline_alert_scan_writes_alerts_without_publishing(
     iterator_arguments = {}
 
     def fake_iter_replay_minutes(
-        data_dir, asset, start, end, limit, *, warmup_hours
+        data_dir, asset, start, end, limit, *, warmup_hours, history_start
     ):
         iterator_arguments.update(
             data_dir=data_dir,
@@ -41,6 +41,7 @@ def test_offline_alert_scan_writes_alerts_without_publishing(
             end=end,
             limit=limit,
             warmup_hours=warmup_hours,
+            history_start=history_start,
         )
         yield warmup_minute
         yield quiet_minute
@@ -52,6 +53,12 @@ def test_offline_alert_scan_writes_alerts_without_publishing(
 
         def process_minute(self, minute: ReplayMinute) -> dict[str, object]:
             self.processed.append(minute)
+            if minute is warmup_minute:
+                return {
+                    "asset_id": "PUMP-06",
+                    "phase": "alert",
+                    "fault_type": "PRE_ROLL_ALERT",
+                }
             if minute is alert_minute:
                 return {
                     "asset_id": "PUMP-06",
@@ -79,6 +86,8 @@ def test_offline_alert_scan_writes_alerts_without_publishing(
             "PUMP-06",
             "--start",
             "2025-10-08T13:50:00Z",
+            "--model-history-start",
+            "2025-10-07T13:50:00Z",
             "--limit",
             "2",
             "--output",
@@ -95,6 +104,7 @@ def test_offline_alert_scan_writes_alerts_without_publishing(
         "end": None,
         "limit": 2,
         "warmup_hours": 24,
+        "history_start": "2025-10-07T13:50:00Z",
     }
     assert predictor.processed == [warmup_minute, quiet_minute, alert_minute]
     assert alerts == [

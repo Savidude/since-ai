@@ -68,6 +68,13 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--model-history-start",
+        help=(
+            "Earliest timestamp fed to the predictor before replay starts; "
+            "defaults to up to 24 hours before each replay start."
+        ),
+    )
+    parser.add_argument(
         "--end",
         help="Optional replay end timestamp, exclusive.",
     )
@@ -99,6 +106,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.model == "none" and args.model_history_start is not None:
+        parser.error("--model-history-start requires an enabled prediction model.")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -175,6 +184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             data_dir=args.data,
                             asset=args.thing_name,
                             start=start,
+                            model_history_start=args.model_history_start,
                             end=args.end,
                             limit=args.limit,
                             speed=args.speed,
@@ -219,6 +229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 data_dir=args.data,
                 asset=args.thing_name,
                 start=args.start,
+                model_history_start=args.model_history_start,
                 end=args.end,
                 limit=args.limit,
                 speed=args.speed,

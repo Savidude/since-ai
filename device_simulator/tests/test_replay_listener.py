@@ -233,6 +233,7 @@ def test_listener_command_timestamp_becomes_replay_start(
     monkeypatch.setattr(cli, "AwsIotProvisioner", FakeProvisioner)
     monkeypatch.setattr(cli, "iter_replay_commands", replay_commands)
     monkeypatch.setattr(cli, "publish_replay_telemetry", publish_replay)
+    monkeypatch.setattr(cli, "create_predictor", lambda *args, **kwargs: object())
 
     status = cli.main(
         [
@@ -243,8 +244,8 @@ def test_listener_command_timestamp_becomes_replay_start(
             "--data",
             "data/full",
             "--listen-for-replay",
-            "--model",
-            "none",
+            "--model-history-start",
+            "2025-10-08T00:00:00Z",
             "--end",
             "2025-10-11T00:00:00Z",
             "--limit",
@@ -262,10 +263,12 @@ def test_listener_command_timestamp_becomes_replay_start(
     assert initial_replay_stopped.is_set()
     assert requested_replay_started.is_set()
     assert initial_replay["start"] == DEFAULT_START
+    assert initial_replay["model_history_start"] == "2025-10-08T00:00:00Z"
     assert initial_replay["end"] == "2025-10-11T00:00:00Z"
     assert initial_replay["limit"] == 7
     assert initial_replay["speed"] == 0.0
     assert requested_replay["start"] == "2025-10-10T00:00:00Z"
+    assert requested_replay["model_history_start"] == "2025-10-08T00:00:00Z"
     assert requested_replay["end"] == "2025-10-11T00:00:00Z"
     assert requested_replay["limit"] == 7
     assert requested_replay["speed"] == 0.0

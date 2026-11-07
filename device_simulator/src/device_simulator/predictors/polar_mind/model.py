@@ -513,6 +513,20 @@ class PolarMindStream:
         self._learning_rows: list[dict[str, object]] = []
         self.started = None
 
+    def prime_history(self, rows: list[dict[str, object]]) -> None:
+        if self.started is not None or self.history is not None or self._learning_rows:
+            raise ValueError("Model history can only be primed before the first update.")
+        if not rows:
+            return
+
+        history = pd.DataFrame.from_records(rows)
+        history["window_start_utc"] = pd.to_datetime(
+            history["window_start_utc"], utc=True
+        )
+        history = history.sort_values("window_start_utc").reset_index(drop=True)
+        self.started = history["window_start_utc"].iloc[0]
+        self.history = history
+
     def update(self, minute) -> str:
         """Take the next minute. Return the output for that minute as a JSON string."""
         row = dict(minute)
@@ -527,9 +541,17 @@ class PolarMindStream:
             self._learning_rows.append(row)
             alerts = []
         else:
-            if self.history is None:
-                self.history = pd.DataFrame.from_records(self._learning_rows)
+            if self._learning_rows:
+                learning_rows = pd.DataFrame.from_records(self._learning_rows)
+                if self.history is None:
+                    self.history = learning_rows
+                else:
+                    self.history = pd.concat(
+                        [self.history, learning_rows], ignore_index=True
+                    )
                 self._learning_rows.clear()
+            if self.history is None:
+                raise RuntimeError("Model history is not initialized for scoring.")
             alerts = on_minute(minute, self.asset, self.history)
             current = pd.DataFrame([row])
             self.history = current if self.history.empty else pd.concat(

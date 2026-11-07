@@ -129,6 +129,40 @@ def test_replay_minutes_include_warmup_features_and_limit_only_replay(
     assert minutes[1].telemetry["timestamp_utc"] == "2025-10-09T00:01:00+00:00"
 
 
+def test_replay_minutes_use_explicit_model_history_start(tmp_path) -> None:
+    _write_telemetry_csv(tmp_path)
+
+    minutes = list(
+        iter_replay_minutes(
+            tmp_path,
+            "PUMP-06",
+            start="2025-10-09T00:01:00Z",
+            end="2025-10-09T00:02:00Z",
+            history_start="2025-10-09T00:00:00Z",
+        )
+    )
+
+    assert [minute.is_warmup for minute in minutes] == [True, False]
+    assert [minute.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ") for minute in minutes] == [
+        "2025-10-09T00:00:00Z",
+        "2025-10-09T00:01:00Z",
+    ]
+
+
+def test_replay_minutes_reject_model_history_after_replay_start(tmp_path) -> None:
+    _write_telemetry_csv(tmp_path)
+
+    with pytest.raises(ValueError, match="Model history start"):
+        list(
+            iter_replay_minutes(
+                tmp_path,
+                "PUMP-06",
+                start="2025-10-09T00:01:00Z",
+                history_start="2025-10-09T00:02:00Z",
+            )
+        )
+
+
 def test_replay_payloads_load_partitioned_parquet_rows(tmp_path) -> None:
     parquet_dir = (
         tmp_path
@@ -209,6 +243,8 @@ def test_publisher_warms_predictor_and_prints_replay_alert(
             self, replay_minute: ReplayMinute
         ) -> dict[str, object] | None:
             self.minutes.append(replay_minute.timestamp)
+            if replay_minute.is_warmup:
+                return {"fault_type": "PRE_ROLL_ALERT"}
             if replay_minute.timestamp == pd.Timestamp("2025-10-09T00:01:00Z"):
                 return {
                     "fault_type": "TEST_ALERT",
@@ -223,6 +259,7 @@ def test_publisher_warms_predictor_and_prints_replay_alert(
         data_dir=tmp_path,
         asset="PUMP-06",
         start="2025-10-09T00:01:00Z",
+        model_history_start="2025-10-09T00:00:00Z",
         end="2025-10-09T00:02:00Z",
         speed=0,
         predictor=predictor,
@@ -233,8 +270,13 @@ def test_publisher_warms_predictor_and_prints_replay_alert(
         pd.Timestamp("2025-10-09T00:00:00Z"),
         pd.Timestamp("2025-10-09T00:01:00Z"),
     ]
-    assert "Prediction:" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Prediction:" in output
+    assert "Warm-up prediction" not in output
     assert len(client.publications) == 1
+    assert json.loads(client.publications[0]["payload"])["timestamp_utc"] == (
+        "2025-10-09T00:01:00+00:00"
+    )
 
 
 def test_publisher_prints_no_alert_replay_status_but_suppresses_warmup(
@@ -319,6 +361,8 @@ def test_replay_cli_start_is_overridable_and_has_requested_default() -> None:
             "data/full",
             "--start",
             "2025-10-10T00:00:00Z",
+            "--model-history-start",
+            "2025-10-08T00:00:00Z",
         ]
     )
 
@@ -327,6 +371,8 @@ def test_replay_cli_start_is_overridable_and_has_requested_default() -> None:
     assert default_args.model == "polar-mind"
     assert default_args.thing_name == "PUMP-06"
     assert custom_args.start == "2025-10-10T00:00:00Z"
+    assert default_args.model_history_start is None
+    assert custom_args.model_history_start == "2025-10-08T00:00:00Z"
 
 
 def test_replay_cli_requires_a_dataset() -> None:

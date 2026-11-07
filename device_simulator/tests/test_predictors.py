@@ -45,6 +45,59 @@ def test_polar_mind_adapter_loads_local_asset_metadata_and_streams(tmp_path) -> 
     assert result["fault_type"] is None
 
 
+def test_polar_mind_adapter_batches_history_before_scoring_replay_minutes(
+    tmp_path, monkeypatch
+) -> None:
+    pd.DataFrame(
+        [{"asset_id": "PUMP-06", "motor_rated_rpm": 1800.0}]
+    ).to_csv(tmp_path / "assets.csv", index=False)
+    history_seen = []
+
+    def fake_on_minute(minute, asset, history):
+        history_seen.append(history.copy())
+        return []
+
+    monkeypatch.setattr(model, "on_minute", fake_on_minute)
+    predictor = create_predictor(
+        "polar-mind",
+        data_dir=tmp_path,
+        asset="PUMP-06",
+    )
+    assert predictor is not None
+
+    history_timestamps = [
+        pd.Timestamp("2025-10-08T00:00:00Z"),
+        pd.Timestamp("2025-10-08T01:00:00Z"),
+        pd.Timestamp("2025-10-09T00:00:00Z"),
+    ]
+    for timestamp in history_timestamps:
+        assert predictor.process_minute(
+            ReplayMinute(
+                timestamp=timestamp,
+                telemetry={},
+                features={"window_start_utc": timestamp, "rows": 60},
+                is_warmup=True,
+            )
+        ) is None
+
+    assert history_seen == []
+
+    replay_timestamp = pd.Timestamp("2025-10-09T00:01:00Z")
+    result = predictor.process_minute(
+        ReplayMinute(
+            timestamp=replay_timestamp,
+            telemetry={},
+            features={"window_start_utc": replay_timestamp, "rows": 60},
+            is_warmup=False,
+        )
+    )
+
+    assert result is not None
+    assert result["phase"] == "watching"
+    assert len(history_seen) == 1
+    assert history_seen[0]["window_start_utc"].tolist() == history_timestamps
+
+
 def test_polar_mind_stream_holds_alerts_until_learning_period_completes(
     monkeypatch,
 ) -> None:
