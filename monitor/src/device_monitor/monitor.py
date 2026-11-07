@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TextIO
 
@@ -49,6 +49,7 @@ def monitor_topic(
     credentials_provider: auth.AwsCredentialsProvider,
     stop_event: threading.Event | None = None,
     capture_file: TextIO | None = None,
+    additional_topics: Sequence[str] = (),
 ) -> None:
     connection = mqtt_connection_builder.websockets_with_default_aws_signing(
         endpoint=endpoint,
@@ -64,13 +65,18 @@ def monitor_topic(
     try:
         connection.connect().result()
         connected = True
-        subscribe_future, _packet_id = connection.subscribe(
-            topic=topic,
-            qos=mqtt.QoS.AT_LEAST_ONCE,
-            callback=_message_callback(capture_file),
+        callback = _message_callback(capture_file)
+        topics = (topic, *additional_topics)
+        for subscribed_topic in topics:
+            subscribe_future, _packet_id = connection.subscribe(
+                topic=subscribed_topic,
+                qos=mqtt.QoS.AT_LEAST_ONCE,
+                callback=callback,
+            )
+            subscribe_future.result()
+        LOGGER.info(
+            "Listening on %s; press Ctrl+C to stop.", ", ".join(topics)
         )
-        subscribe_future.result()
-        LOGGER.info("Listening on %s; press Ctrl+C to stop.", topic)
         event = stop_event if stop_event is not None else threading.Event()
         event.wait()
     finally:

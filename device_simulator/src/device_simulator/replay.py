@@ -27,6 +27,31 @@ def _utc_timestamp(value: str) -> pd.Timestamp:
     return timestamp.tz_convert("UTC")
 
 
+def list_telemetry_assets(data_dir: str | os.PathLike[str]) -> tuple[str, ...]:
+    data_path = Path(data_dir)
+    assets: set[str] = set()
+
+    telemetry_dir = data_path / "telemetry"
+    if telemetry_dir.is_dir():
+        for partition_dir in telemetry_dir.glob("asset_id=*"):
+            if partition_dir.is_dir():
+                asset = partition_dir.name.partition("=")[2]
+                if asset:
+                    assets.add(asset)
+
+    csv_path = data_path / "telemetry.csv.gz"
+    if csv_path.is_file():
+        columns = pd.read_csv(csv_path, nrows=0).columns
+        if "asset_id" not in columns:
+            raise ValueError(f"Telemetry CSV {csv_path} is missing the 'asset_id' column.")
+        csv_assets = pd.read_csv(csv_path, usecols=["asset_id"])["asset_id"]
+        assets.update(str(asset) for asset in csv_assets.dropna() if str(asset))
+
+    if not assets:
+        raise ValueError(f"No telemetry assets found in {data_path!s}.")
+    return tuple(sorted(assets))
+
+
 def _load(
     data_dir: str | os.PathLike[str],
     asset: str,

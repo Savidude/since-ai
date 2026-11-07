@@ -17,10 +17,6 @@ from .replay import DEFAULT_START, iter_replay_minutes
 LOGGER = logging.getLogger(__name__)
 
 
-def _print_prediction(prediction: dict[str, object]) -> None:
-    print(f"Prediction: {json.dumps(prediction, separators=(',', ':'))}", flush=True)
-
-
 def publish_replay_telemetry(
     iot_data_client: BaseClient,
     device: Device,
@@ -91,7 +87,13 @@ def publish_replay_telemetry(
         if predictor is not None:
             prediction = predictor.process_minute(minute)
             if prediction is not None:
-                _print_prediction(dict(prediction))
+                iot_data_client.publish(
+                    topic=f"devices/{device.thing_name}/alerts",
+                    payload=json.dumps(
+                        dict(prediction), separators=(",", ":")
+                    ).encode("utf-8"),
+                    qos=1,
+                )
         LOGGER.info("Published replay telemetry minute %d", published)
 
     LOGGER.info("Replayed %d telemetry minutes", published)

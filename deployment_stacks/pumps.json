@@ -1,0 +1,14 @@
+{
+  "architecture": "ARM64",
+  "pumps": [
+    {
+      "asset": "PUMP-06",
+      "start": "2025-10-09T21:45:00Z",
+      "model_history_start": "2025-10-07T13:50:00Z",
+      "speed": 60,
+      "model": "polar-mind",
+      "cpu": 256,
+      "memory_mib": 512
+    }
+  ]
+}

@@ -13,6 +13,7 @@ from device_simulator.replay import (
     ReplayMinute,
     iter_replay_minutes,
     iter_replay_payloads,
+    list_telemetry_assets,
 )
 
 
@@ -76,6 +77,19 @@ def _write_telemetry_csv(data_dir) -> None:
             },
         ]
     ).to_csv(data_dir / "telemetry.csv.gz", index=False, compression="gzip")
+
+
+def test_list_telemetry_assets_from_csv_and_partitioned_parquet(tmp_path) -> None:
+    _write_telemetry_csv(tmp_path)
+    partition_dir = (
+        tmp_path
+        / "telemetry"
+        / "asset_id=PUMP-04"
+        / "day=2025-10-09"
+    )
+    partition_dir.mkdir(parents=True)
+
+    assert list_telemetry_assets(tmp_path) == ("PUMP-04", "PUMP-05", "PUMP-06")
 
 
 def test_replay_payloads_filter_sort_and_normalize_csv_rows(tmp_path) -> None:
@@ -223,7 +237,7 @@ def test_replay_publisher_uses_device_topic_and_realtime_delays(
     assert json.loads(client.publications[0]["payload"])["sample_count"] == 1.5
 
 
-def test_publisher_warms_predictor_and_prints_replay_alert(
+def test_publisher_warms_predictor_and_publishes_replay_alert(
     tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_telemetry_csv(tmp_path)
@@ -271,17 +285,22 @@ def test_publisher_warms_predictor_and_prints_replay_alert(
         pd.Timestamp("2025-10-09T00:01:00Z"),
     ]
     output = capsys.readouterr().out
-    assert "Prediction:" in output
-    assert "Warm-up prediction" not in output
-    assert len(client.publications) == 1
-    assert json.loads(client.publications[0]["payload"])["timestamp_utc"] == (
+    assert output == ""
+    assert len(client.publications) == 2
+    telemetry, alert = client.publications
+    assert telemetry["topic"] == device.topic
+    assert json.loads(telemetry["payload"])["timestamp_utc"] == (
         "2025-10-09T00:01:00+00:00"
     )
+    assert alert["topic"] == "devices/PUMP-06/alerts"
+    assert alert["qos"] == 1
+    assert json.loads(alert["payload"]) == {
+        "fault_type": "TEST_ALERT",
+        "alert_time_utc": "2025-10-09T00:02:00Z",
+    }
 
 
-def test_publisher_prints_no_alert_replay_status_but_suppresses_warmup(
-    tmp_path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_publisher_publishes_replay_status_but_suppresses_warmup(tmp_path) -> None:
     _write_telemetry_csv(tmp_path)
     client = FakeIotDataClient()
     device = Device(
@@ -311,11 +330,18 @@ def test_publisher_prints_no_alert_replay_status_but_suppresses_warmup(
         predictor=StatusPredictor(),
     )
 
-    output = capsys.readouterr().out
     assert count == 1
-    assert output.count("Prediction:") == 1
-    assert '"phase":"watching"' in output
-    assert "learning_normal" not in output
+    alerts = [
+        publication
+        for publication in client.publications
+        if publication["topic"] == "devices/PUMP-06/alerts"
+    ]
+    assert len(alerts) == 1
+    assert alerts[0]["qos"] == 1
+    assert json.loads(alerts[0]["payload"]) == {
+        "phase": "watching",
+        "fault_type": None,
+    }
 
 
 def test_replay_publisher_stops_when_stop_event_is_set(tmp_path) -> None:

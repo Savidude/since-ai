@@ -20,7 +20,10 @@ _THING_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Subscribe to an AWS IoT Core telemetry topic and print messages."
+        description=(
+            "Subscribe to an AWS IoT Core device's telemetry and alerts topics "
+            "and print messages."
+        )
     )
     parser.add_argument(
         "--thing-name",
@@ -36,6 +39,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile",
         help="AWS profile name (defaults to the standard boto3 credential chain).",
+    )
+    parser.add_argument(
+        "--topic",
+        choices=("both", "telemetry", "alerts"),
+        default="both",
+        help="Topic to subscribe to (default: both).",
     )
     parser.add_argument(
         "--verbose",
@@ -74,7 +83,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             endpointType="iot:Data-ATS"
         )["endpointAddress"]
         credentials_provider = create_credentials_provider(session)
-        topic = f"devices/{args.thing_name}/telemetry"
+        telemetry_topic = f"devices/{args.thing_name}/telemetry"
+        alerts_topic = f"devices/{args.thing_name}/alerts"
+        topics = {
+            "both": (telemetry_topic, alerts_topic),
+            "telemetry": (telemetry_topic,),
+            "alerts": (alerts_topic,),
+        }[args.topic]
         client_id = f"device-monitor-{uuid.uuid4().hex[:8]}"
         capture_context = (
             args.capture.open("a", encoding="utf-8")
@@ -85,10 +100,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             monitor_topic(
                 endpoint=endpoint,
                 region=region,
-                topic=topic,
+                topic=topics[0],
                 client_id=client_id,
                 credentials_provider=credentials_provider,
                 capture_file=capture_file,
+                additional_topics=topics[1:],
             )
     except KeyboardInterrupt:
         LOGGER.info("Stopped.")

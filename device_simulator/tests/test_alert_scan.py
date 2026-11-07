@@ -116,3 +116,94 @@ def test_offline_alert_scan_writes_alerts_without_publishing(
             "alert_time_utc": "2025-10-08T13:52:00Z",
         }
     ]
+
+
+def test_all_assets_scan_writes_combined_alerts_in_parallel(
+    tmp_path, monkeypatch
+) -> None:
+    class FakePredictor:
+        def __init__(self, asset: str) -> None:
+            self.asset = asset
+
+        def process_minute(self, minute: ReplayMinute) -> dict[str, object]:
+            return {
+                "fault_type": f"{self.asset}_FAULT",
+                "phase": "alert",
+            }
+
+    class FakeProcessPoolExecutor:
+        worker_counts: list[int] = []
+
+        def __init__(self, *, max_workers: int) -> None:
+            self.worker_counts.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            return None
+
+        def map(self, function, assets):
+            return [function(asset) for asset in assets]
+
+    timestamp = pd.Timestamp("2025-10-08T13:50:00Z")
+
+    def fake_iter_replay_minutes(
+        data_dir, asset, start, end, limit, *, warmup_hours, history_start
+    ):
+        yield ReplayMinute(
+            timestamp=timestamp,
+            telemetry={},
+            features={},
+            is_warmup=False,
+        )
+
+    monkeypatch.setattr(
+        alert_scan, "list_telemetry_assets", lambda data_dir: ("PUMP-05", "PUMP-06")
+    )
+    monkeypatch.setattr(
+        alert_scan,
+        "ProcessPoolExecutor",
+        FakeProcessPoolExecutor,
+    )
+    monkeypatch.setattr(alert_scan, "iter_replay_minutes", fake_iter_replay_minutes)
+    monkeypatch.setattr(
+        alert_scan,
+        "create_predictor",
+        lambda name, *, data_dir, asset: FakePredictor(asset),
+    )
+    output_path = tmp_path / "alerts.json"
+
+    result = alert_scan.main(
+        [
+            "--data",
+            str(tmp_path),
+            "--all-assets",
+            "--workers",
+            "2",
+            "--start",
+            "2025-10-08T13:50:00Z",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    alerts = json.loads(output_path.read_text(encoding="utf-8"))
+    assert result == 0
+    assert FakeProcessPoolExecutor.worker_counts == [2]
+    assert alerts == [
+        {
+            "fault_type": "PUMP-05_FAULT",
+            "phase": "alert",
+            "asset_id": "PUMP-05",
+            "minute_utc": "2025-10-08T13:50:00Z",
+            "alert_time_utc": "2025-10-08T13:51:00Z",
+        },
+        {
+            "fault_type": "PUMP-06_FAULT",
+            "phase": "alert",
+            "asset_id": "PUMP-06",
+            "minute_utc": "2025-10-08T13:50:00Z",
+            "alert_time_utc": "2025-10-08T13:51:00Z",
+        },
+    ]

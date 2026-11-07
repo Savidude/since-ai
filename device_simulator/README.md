@@ -3,7 +3,8 @@
 This Python command-line app creates an AWS IoT Core Thing if it does not
 already exist, then replays minute-aggregated telemetry from a supplied dataset
 to an AWS IoT topic. It can also run a selectable prediction adapter; the
-included PolarMind adapter prints fault alerts to the console.
+included PolarMind adapter publishes prediction results to
+`devices/<thing-name>/alerts`.
 
 The sample uses your normal AWS credentials with the IoT Data Plane HTTPS API
 for publishing and MQTT over WebSockets when listening for replay commands. It
@@ -23,7 +24,8 @@ The AWS identity needs:
 
 - `iot:CreateThing` to create the Thing on the first run
 - `iot:DescribeEndpoint` to find the account's IoT Data Plane endpoint
-- `iot:Publish` for `devices/<thing-name>/telemetry`
+- `iot:Publish` for `devices/<thing-name>/telemetry` and, when predictions are
+  enabled, `devices/<thing-name>/alerts`
 - When using `--listen-for-replay`: `iot:Connect` for the simulator MQTT client,
   `iot:Subscribe` for the replay topic filter, and `iot:Receive` for the replay
   topic
@@ -70,6 +72,22 @@ of replay minutes scanned; warm-up minutes do not count toward the limit. To
 use the console command after changing an existing installation, reinstall
 the package with `python -m pip install -e .`.
 
+To scan all assets in the telemetry dataset concurrently and write their
+alerts to one combined JSON file, use `--all-assets`:
+
+```sh
+device-simulator-scan-alerts \
+  --data data/full \
+  --all-assets \
+  --output all-pump-alerts.json
+```
+
+The scanner discovers assets from the telemetry partitions or `telemetry.csv.gz`.
+By default, it uses up to one worker per logical CPU core, capped at the number
+of assets. Set `--workers` to choose a different maximum. In this mode,
+`--limit` applies separately to each asset, and each alert includes its
+`asset_id`.
+
 By default, predictor history begins up to 24 hours before `--start`. Set
 `--model-history-start` to use an earlier history window. Alerts are still
 written only for minutes at or after `--start`.
@@ -89,8 +107,9 @@ published and do not count toward `--limit`. If less than 24 hours of prior
 data is available, the model continues learning as replay proceeds. The
 included PolarMind adapter buffers warm-up history rather than scoring each
 historical minute, then starts predicting when replay begins. Warm-up start,
-progress, and completion are logged. Each replay-minute prediction is printed
-to the console as JSON, including no-alert results with `fault_type: null`.
+progress, and completion are logged. Each non-null replay-minute prediction is
+published as JSON to `devices/<thing-name>/alerts`, including no-alert results
+with `fault_type: null`.
 
 Use `--model-history-start` to feed the predictor more than the default 24 hours
 before the first published minute. This is useful for reproducing an offline

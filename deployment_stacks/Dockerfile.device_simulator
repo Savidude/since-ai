@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY device_simulator/pyproject.toml device_simulator/README.md ./
+COPY device_simulator/src ./src
+COPY challenge_description/data/full ./data/full
+
+RUN python -m pip install --no-cache-dir .
+
+ENTRYPOINT ["device-simulator"]

@@ -1,0 +1,13 @@
+[
+  {
+    "asset_id": "PUMP-11",
+    "minute_utc": "2026-04-25T08:42:00Z",
+    "phase": "alert",
+    "event_class": "SENSOR",
+    "fault_type": "SENSOR_STUCK",
+    "confidence": 0.95,
+    "evidence": "PolarMind: discharge_pressure_kpa is frozen while the pump is running",
+    "recommended_action": "Compare the frozen transmitter with a local gauge before planning any mechanical work.",
+    "alert_time_utc": "2026-04-25T08:43:00Z"
+  }
+]
