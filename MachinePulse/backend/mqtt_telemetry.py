@@ -47,6 +47,39 @@ def normalize_telemetry_message(
     return record
 
 
+def normalize_alert_message(
+    payload: bytes,
+    *,
+    asset_id: str,
+    topic: str,
+) -> dict[str, Any] | None:
+    try:
+        message = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        LOGGER.warning("Ignoring non-JSON alert on %s: %s", topic, error)
+        return None
+
+    if isinstance(message, dict) and isinstance(message.get("payload"), dict):
+        message = message["payload"]
+
+    if not isinstance(message, dict):
+        LOGGER.warning("Ignoring non-object alert on %s", topic)
+        return None
+
+    record = dict(message)
+    record.setdefault("asset_id", asset_id)
+    return record
+
+
+def is_fault_alert(alert: dict[str, Any]) -> bool:
+    phase = str(alert.get("phase") or "").lower()
+    return (
+        phase == "alert"
+        or alert.get("event_class") is not None
+        or alert.get("fault_type") is not None
+    )
+
+
 class MqttTelemetrySubscriber:
     def __init__(self, asset_id: str, max_records: int = 1000) -> None:
         if not _ASSET_NAME_PATTERN.fullmatch(asset_id):
@@ -58,12 +91,15 @@ class MqttTelemetrySubscriber:
 
         self.asset_id = asset_id
         self.topic = f"devices/{asset_id}/telemetry"
+        self.alert_topic = f"devices/{asset_id}/alerts"
         self._records: deque[dict[str, Any]] = deque(maxlen=max_records)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._last_access = time.monotonic()
         self._status = "connecting"
         self._error: str | None = None
+        self._alert_error: str | None = None
+        self._latest_alert: dict[str, Any] | None = None
         self._thread = threading.Thread(
             target=self._run,
             name=f"mqtt-{asset_id.lower()}",
@@ -77,9 +113,21 @@ class MqttTelemetrySubscriber:
             return self._status
 
     @property
+    def alert_error(self) -> str | None:
+        with self._lock:
+            self._last_access = time.monotonic()
+            return self._alert_error
+
+    @property
     def error(self) -> str | None:
         with self._lock:
             return self._error
+
+    @property
+    def latest_alert(self) -> dict[str, Any] | None:
+        with self._lock:
+            self._last_access = time.monotonic()
+            return self._latest_alert.copy() if self._latest_alert is not None else None
 
     def get_records(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -101,6 +149,23 @@ class MqttTelemetrySubscriber:
 
         with self._lock:
             self._records.append(record)
+
+    def _on_alert(self, topic: str, payload: bytes, **_kwargs: object) -> None:
+        alert = normalize_alert_message(
+            payload,
+            asset_id=self.asset_id,
+            topic=topic,
+        )
+        with self._lock:
+            self._last_access = time.monotonic()
+            if alert is None:
+                self._alert_error = (
+                    "Received an invalid alert message; the current status "
+                    "could not be updated."
+                )
+            else:
+                self._latest_alert = alert
+                self._alert_error = None
 
     def _on_connection_interrupted(
         self,
@@ -155,6 +220,25 @@ class MqttTelemetrySubscriber:
             )
             subscribe_future.result()
             self._set_status("connected")
+
+            try:
+                alerts_future, _packet_id = connection.subscribe(
+                    topic=self.alert_topic,
+                    qos=mqtt.QoS.AT_LEAST_ONCE,
+                    callback=self._on_alert,
+                )
+                alerts_future.result()
+            except (AwsCrtError, RuntimeError) as error:
+                LOGGER.exception(
+                    "MQTT alert subscription failed for %s",
+                    self.asset_id,
+                )
+                with self._lock:
+                    self._last_access = time.monotonic()
+                    self._alert_error = (
+                        f"Could not subscribe to {self.alert_topic}: {error}"
+                    )
+
             while not self._stop_event.wait(timeout=1):
                 with self._lock:
                     last_access = self._last_access

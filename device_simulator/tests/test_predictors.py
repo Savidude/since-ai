@@ -131,3 +131,59 @@ def test_polar_mind_stream_holds_alerts_until_learning_period_completes(
     assert watching["fault_type"] == "TEST_ALERT"
     assert len(calls) == 1
     assert len(calls[0][2]) == 1
+
+
+def test_drift_confidence_uses_the_window_median() -> None:
+    row = pd.Series(
+        {
+            "drift_ch": "i",
+            "drift_med": 8.25,
+            "z_i": 5.5,
+        }
+    )
+
+    assert model.signature_confidence("drift", row) == 0.75
+
+
+def test_mark_drift_retains_the_triggering_channel_after_it_clears() -> None:
+    minute_count = 1000
+    z_i = [0.0] * 180 + [4.0] * 360 + [6.0] * (minute_count - 540)
+    frame = pd.DataFrame(
+        {
+            "asset_id": ["PUMP-06"] * minute_count,
+            "window_start_utc": pd.date_range(
+                "2025-10-08T00:00:00Z", periods=minute_count, freq="min"
+            ),
+            "steady": [True] * minute_count,
+            "z_i": z_i,
+            "z_pw": [0.0] * minute_count,
+            "z_pd": [0.0] * minute_count,
+            "z_q": [0.0] * minute_count,
+            "z_n": [0.0] * minute_count,
+        }
+    )
+
+    marked = model.mark_drift(frame)
+
+    assert marked["drift_ch"].eq("i").any()
+    assert marked.iloc[-1]["drift_ch"] == ""
+    assert marked.iloc[-1]["drift_hold_ch"] == "i"
+    assert marked.iloc[-1]["drift_hold_med"] == 6.0
+
+
+def test_misalignment_evidence_uses_readings_and_spectrum_ratio() -> None:
+    evidence = model.evidence_text(
+        "mis",
+        pd.Series(
+            {
+                "z_v": 7.0,
+                "vibration_rms_mm_s__mean": 8.2,
+                "ratio_21": 1.4,
+            }
+        ),
+        pd.Series(dtype=object),
+    )
+
+    assert evidence == (
+        "vibration_rms_mm_s (8.2 mm/s); 2x/1x vibration (1.40)"
+    )

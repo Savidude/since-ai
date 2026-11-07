@@ -9,6 +9,15 @@
       "model": "polar-mind",
       "cpu": 256,
       "memory_mib": 512
+    },
+    {
+      "asset": "PUMP-12",
+      "start": "2025-11-25T00:00:00Z",
+      "model_history_start": "2025-11-24T00:00:00Z",
+      "speed": 60,
+      "model": "polar-mind",
+      "cpu": 256,
+      "memory_mib": 512
     }
   ]
 }

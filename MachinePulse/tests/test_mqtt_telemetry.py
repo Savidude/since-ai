@@ -19,8 +19,8 @@ class CompletedFuture:
 
 
 class FakeConnection:
-    def __init__(self, payload: bytes) -> None:
-        self.payload = payload
+    def __init__(self, payloads: dict[str, bytes]) -> None:
+        self.payloads = payloads
         self.subscribed = threading.Event()
         self.disconnected = False
         self.subscriptions: list[dict[str, Any]] = []
@@ -30,14 +30,18 @@ class FakeConnection:
 
     def subscribe(self, **kwargs: Any) -> tuple[CompletedFuture, int]:
         self.subscriptions.append(kwargs)
-        kwargs["callback"](
-            topic=kwargs["topic"],
-            payload=self.payload,
-            dup=False,
-            qos=mqtt.QoS.AT_LEAST_ONCE,
-            retain=False,
-        )
-        self.subscribed.set()
+        topic = kwargs["topic"]
+        payload = self.payloads.get(topic)
+        if payload is not None:
+            kwargs["callback"](
+                topic=topic,
+                payload=payload,
+                dup=False,
+                qos=mqtt.QoS.AT_LEAST_ONCE,
+                retain=False,
+            )
+        if topic == "devices/PUMP-06/alerts":
+            self.subscribed.set()
         return CompletedFuture(), 1
 
     def disconnect(self) -> CompletedFuture:
@@ -90,16 +94,33 @@ def test_normalize_captured_payload_wrapper() -> None:
     }
 
 
-def test_subscriber_records_messages_from_asset_telemetry_topic(
+def test_subscriber_receives_alerts_and_telemetry_topics(
     monkeypatch: Any,
 ) -> None:
-    payload = json.dumps(
+    alert_payload = json.dumps(
+        {
+            "asset_id": "PUMP-06",
+            "minute_utc": "2025-10-09T14:45:00Z",
+            "phase": "alert",
+            "event_class": "MACHINE",
+            "fault_type": "BEARING_WEAR",
+            "confidence": 0.64,
+            "evidence": "Vibration and pressure anomalies.",
+            "recommended_action": "Inspect the bearing.",
+        }
+    ).encode("utf-8")
+    telemetry_payload = json.dumps(
         {
             "timestamp_utc": "2025-10-09T14:45:00+00:00",
             "motor_current_a": 17.2833,
         }
     ).encode("utf-8")
-    connection = FakeConnection(payload)
+    connection = FakeConnection(
+        {
+            "devices/PUMP-06/alerts": alert_payload,
+            "devices/PUMP-06/telemetry": telemetry_payload,
+        }
+    )
     builder_options: dict[str, Any] = {}
 
     class FakeIotClient:
@@ -134,6 +155,23 @@ def test_subscriber_records_messages_from_asset_telemetry_topic(
     subscriber = MqttTelemetrySubscriber("PUMP-06")
     try:
         assert connection.subscribed.wait(timeout=2)
+        assert {
+            subscription["topic"] for subscription in connection.subscriptions
+        } == {
+            "devices/PUMP-06/alerts",
+            "devices/PUMP-06/telemetry",
+        }
+        assert subscriber.latest_alert == {
+            "asset_id": "PUMP-06",
+            "minute_utc": "2025-10-09T14:45:00Z",
+            "phase": "alert",
+            "event_class": "MACHINE",
+            "fault_type": "BEARING_WEAR",
+            "confidence": 0.64,
+            "evidence": "Vibration and pressure anomalies.",
+            "recommended_action": "Inspect the bearing.",
+        }
+        assert subscriber.alert_error is None
         assert subscriber.get_records() == [
             {
                 "timestamp_utc": "2025-10-09T14:45:00+00:00",
@@ -142,8 +180,10 @@ def test_subscriber_records_messages_from_asset_telemetry_topic(
                 "topic": "devices/PUMP-06/telemetry",
             }
         ]
-        assert connection.subscriptions[0]["topic"] == "devices/PUMP-06/telemetry"
-        assert connection.subscriptions[0]["qos"] == mqtt.QoS.AT_LEAST_ONCE
+        assert all(
+            subscription["qos"] == mqtt.QoS.AT_LEAST_ONCE
+            for subscription in connection.subscriptions
+        )
         assert builder_options["region"] == "us-east-1"
         assert builder_options["client_id"].startswith("device-monitor-")
     finally:

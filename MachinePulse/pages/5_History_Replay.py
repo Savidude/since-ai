@@ -1,20 +1,113 @@
 
-import streamlit as st
-import plotly.express as px
-import pandas as pd
-
 from datetime import timedelta
+import time
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
+
+from backend import MqttReplaySession, get_replay_timestamp_utc
 
 from utils.demo_data import (
     get_pump_data,
     get_telemetry
 )
 
+from utils.telemetry_charts import (
+    SENSOR_CHART_OPTIONS,
+    render_sensor_charts,
+)
+from utils.alert_display import render_alert_mini_player, render_alert_status
+
+from utils.replay_progress import REPLAY_STAGES, get_replay_stage_index
+
 from utils.ui_components import (
     setup_page,
     render_sidebar,
     page_header
 )
+
+REPLAY_SESSION_KEY = "history_replay_session"
+
+
+@st.dialog("Pump simulator replay", width="large")
+def _show_replay_waiting_dialog(
+    replay_session: MqttReplaySession,
+) -> None:
+    if (
+        replay_session.error
+        or replay_session.status == "stopped"
+        or replay_session.ready
+    ):
+        st.rerun()
+        return
+
+    replay_published_at = replay_session.published_at
+    elapsed_seconds = (
+        None
+        if replay_published_at is None
+        else max(0.0, time.monotonic() - replay_published_at)
+    )
+
+    st.markdown(f"### Preparing replay for {replay_session.asset_id}")
+    st.caption(
+        "The simulator is ready when the application receives its first "
+        "alert."
+    )
+
+    if elapsed_seconds is None:
+        stage_index = None
+        st.status(
+            "Connecting to the pump simulator...",
+            state="running",
+            expanded=False,
+        )
+        st.caption("Preparing the replay request.")
+    else:
+        stage_index = get_replay_stage_index(elapsed_seconds)
+        active_title = REPLAY_STAGES[stage_index]
+        st.status(
+            f"Step {stage_index + 1} of {len(REPLAY_STAGES)}: {active_title}",
+            state="running",
+            expanded=False,
+        )
+
+        if replay_session.status == "reconnecting":
+            st.warning(
+                "The simulator connection is reconnecting. Replay progress will "
+                "resume automatically when it is restored."
+            )
+
+        if elapsed_seconds >= 60:
+            st.warning(
+                "The simulator is taking longer than expected. "
+                "This page will keep waiting for the first alert."
+            )
+
+    st.markdown("#### Replay stages")
+    for index, title in enumerate(REPLAY_STAGES):
+        if stage_index is None or index > stage_index:
+            icon = "⏳"
+            status_text = "Not started"
+        elif index < stage_index:
+            icon = "✅"
+            status_text = "Complete"
+        else:
+            icon = "🔄"
+            status_text = "In progress"
+
+        st.markdown(f"{icon} **{index + 1}. {title}** — {status_text}")
+
+    if st.button("Cancel replay", key="cancel_history_replay"):
+        replay_session.stop()
+        st.session_state.pop(REPLAY_SESSION_KEY, None)
+        st.rerun()
+
+    st_autorefresh(
+        interval=1000,
+        key=f"history_replay_waiting_refresh_{replay_session.asset_id}",
+    )
 
 
 # ==================================================
@@ -77,6 +170,12 @@ pump = st.selectbox(
     pump_ids,
     key="history_pump"
 )
+
+replay_session = st.session_state.get(REPLAY_SESSION_KEY)
+if replay_session is not None and replay_session.asset_id != pump:
+    replay_session.stop()
+    st.session_state.pop(REPLAY_SESSION_KEY, None)
+    replay_session = None
 
 
 # ==================================================
@@ -489,6 +588,62 @@ c3.metric(
     if pd.notna(temperature) else "N/A"
 )
 
+if st.button(
+    "▶ Replay",
+    key="history_replay_button",
+    help="Request telemetry from 10 minutes before the selected historical time.",
+    width="stretch",
+):
+    if replay_session is not None:
+        replay_session.stop()
+
+    fault_timestamp = (
+        pd.Timestamp(replay_fault_timestamp).to_pydatetime()
+        if replay_fault_timestamp is not None
+        else None
+    )
+    replay_start_timestamp = get_replay_timestamp_utc(
+        selected_timestamp_utc.to_pydatetime(),
+        fault_timestamp,
+    )
+    replay_session = MqttReplaySession(
+        pump,
+        replay_start_timestamp,
+    )
+    st.session_state[REPLAY_SESSION_KEY] = replay_session
+
+if replay_session is not None:
+    replay_status = replay_session.status
+
+    if replay_session.error:
+        st.error("The replay could not be completed. Please try again.")
+    elif replay_status == "fault_detected":
+        st.success(
+            "Fault detected during replay. Review the current alert details below."
+        )
+    elif replay_status == "stopped":
+        st.info("The replay session has stopped. Select Replay to start again.")
+    elif replay_session.ready:
+        st.success("Pump simulator is ready; receiving alert updates.")
+        st_autorefresh(
+            interval=1000,
+            key=f"history_replay_live_refresh_{pump}",
+        )
+    else:
+        _show_replay_waiting_dialog(replay_session)
+
+    st.caption(
+        "Replay start: "
+        f"{replay_session.request_timestamp_utc.strftime('%d %b %Y %H:%M:%S UTC')}"
+    )
+
+    if replay_session.alert_error:
+        st.warning("Live alert updates are temporarily unavailable.")
+
+    current_alert = replay_session.latest_alert
+    if current_alert is not None:
+        render_alert_mini_player(current_alert, asset_id=pump)
+        render_alert_status(current_alert)
 
 # ==================================================
 # SENSOR MEASUREMENTS
@@ -498,108 +653,126 @@ st.divider()
 
 st.subheader("Historical Sensor Measurements")
 
-measurements = {
-    "Motor Current": ("motor_current_a", "A"),
-    "Motor Power": ("motor_power_kw", "kW"),
-    "Motor Speed": ("motor_speed_rpm", "RPM"),
-    "Motor Winding Temperature": ("motor_winding_temp_c", "°C"),
-    "Suction Pressure": ("suction_pressure_kpa", "kPa"),
-    "Discharge Pressure": ("discharge_pressure_kpa", "kPa"),
-    "Fluid Temperature": ("fluid_temp_c", "°C"),
-    "Ambient Temperature": ("ambient_temp_c", "°C"),
-    "Flow Rate": ("flow_m3_h", "m³/h"),
-    "Valve Position": ("valve_position_pct", "%"),
-    "Vibration RMS": ("vibration_rms_mm_s", "mm/s"),
-    "Bearing Temperature": ("bearing_temp_c", "°C"),
-    "Vibration Acceleration RMS": ("vibration_accel_rms_g", "g"),
-    "Vibration Crest Factor": ("vibration_crest_factor", "")
-}
+live_replay_data = pd.DataFrame()
+if replay_session is not None:
+    replay_records = replay_session.get_telemetry_records()
+    if replay_records:
+        live_replay_data = pd.DataFrame(replay_records)
+        if "timestamp_utc" not in live_replay_data.columns:
+            st.warning("Replay data is missing timestamps and cannot be displayed.")
+            live_replay_data = pd.DataFrame()
+        else:
+            live_replay_data["timestamp_utc"] = pd.to_datetime(
+                live_replay_data["timestamp_utc"],
+                utc=True,
+                errors="coerce",
+            )
+            live_replay_data = (
+                live_replay_data.dropna(subset=["timestamp_utc"])
+                .sort_values("timestamp_utc")
+                .reset_index(drop=True)
+            )
+            if live_replay_data.empty:
+                st.warning("Replay data contains no valid timestamps.")
 
-
-plotted_charts = 0
-
-for label, (column, unit) in measurements.items():
-
-    if column not in replay_data.columns:
-        continue
-
-    valid_data = replay_data.dropna(
-        subset=[column, "timestamp_utc"]
+if not live_replay_data.empty:
+    st.caption(
+        f"Showing {len(live_replay_data):,} replay telemetry measurements."
     )
-
-    if valid_data.empty:
-        continue
-
-    with st.container(border=True):
-
-        st.markdown(f"#### {label}")
-
-        y_label = (
-            f"{label} ({unit})"
-            if unit else label
+    render_sensor_charts(
+        live_replay_data,
+        empty_message="No valid replay sensor measurements available.",
+    )
+else:
+    if replay_session is not None and replay_session.ready:
+        st.info(
+            "The simulator is ready. Waiting for replay telemetry."
         )
 
-        fig = px.line(
-            valid_data,
-            x="timestamp_utc",
-            y=column,
-            template="plotly_white",
-            labels={
-                "timestamp_utc": "Timestamp (UTC)",
-                column: y_label
-            }
+    plotted_charts = 0
+
+    for label, (column, unit) in SENSOR_CHART_OPTIONS.items():
+
+        if column not in replay_data.columns:
+            continue
+
+        valid_data = replay_data.dropna(
+            subset=[column, "timestamp_utc"]
         )
 
-        # Mark the selected historical measurement
-        selected_value = selected.get(column)
+        if valid_data.empty:
+            continue
 
-        if pd.notna(selected_value):
+        with st.container(border=True):
 
-            fig.add_scatter(
-                x=[selected_timestamp_utc],
-                y=[selected_value],
-                mode="markers",
-                marker=dict(size=10),
-                name="Selected record"
+            st.markdown(f"#### {label}")
+
+            y_label = (
+                f"{label} ({unit})"
+                if unit else label
             )
 
-        # Mark the fault event on the charts
-        if replay_fault_timestamp is not None:
-
-            fig.add_vline(
-                x=replay_fault_timestamp,
-                line_dash="dash",
-                line_width=2,
-                annotation_text="Fault event",
-                annotation_position="top"
+            fig = px.line(
+                valid_data,
+                x="timestamp_utc",
+                y=column,
+                template="plotly_white",
+                labels={
+                    "timestamp_utc": "Timestamp (UTC)",
+                    column: y_label
+                }
             )
 
-        fig.update_layout(
-            height=300,
-            margin=dict(
-                l=10,
-                r=10,
-                t=15,
-                b=10
-            ),
-            xaxis_title="Timestamp (UTC)",
-            yaxis_title=y_label,
-            showlegend=False
+            # Mark the selected historical measurement
+            selected_value = selected.get(column)
+
+            if pd.notna(selected_value):
+
+                fig.add_scatter(
+                    x=[selected_timestamp_utc],
+                    y=[selected_value],
+                    mode="markers",
+                    marker=dict(size=10),
+                    name="Selected record"
+                )
+
+            # Mark the fault event on the charts
+            if replay_fault_timestamp is not None:
+
+                fig.add_vline(
+                    x=replay_fault_timestamp,
+                    line_dash="dash",
+                    line_width=2,
+                    annotation_text="Fault event",
+                    annotation_position="top"
+                )
+
+            fig.update_layout(
+                height=300,
+                margin=dict(
+                    l=10,
+                    r=10,
+                    t=15,
+                    b=10
+                ),
+                xaxis_title="Timestamp (UTC)",
+                yaxis_title=y_label,
+                showlegend=False
+            )
+
+            st.plotly_chart(
+                fig,
+                width="stretch"
+            )
+
+            plotted_charts += 1
+
+
+    if plotted_charts == 0:
+
+        st.warning(
+            "No valid measurements available for this period."
         )
-
-        st.plotly_chart(
-            fig,
-            width="stretch"
-        )
-
-        plotted_charts += 1
-
-
-if plotted_charts == 0:
-
-    st.warning(
-        "No valid measurements available for this period."
-    )
 
 
 # ==================================================

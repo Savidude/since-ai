@@ -71,7 +71,9 @@ def signature_confidence(kind: str, row: pd.Series) -> float:
     Confidence is the signature strength divided by twice that threshold:
     0.50 when the rule has just been met, and 0.99 at twice the threshold.
     A missing minute or a frozen transmitter is observed directly, so those two
-    keep a fixed high value. The arithmetic is a few subtractions and one division.
+    keep a fixed high value. Drift is based on a rolling median, so its
+    confidence uses the median that triggered the rule rather than the current
+    minute's value.
     """
     if kind in ("gap", "stuck"):
         return 0.95
@@ -102,8 +104,15 @@ def signature_confidence(kind: str, row: pd.Series) -> float:
     elif kind == "bearing":
         strength, center = max(z("c"), z("a"), z("v"), z("bt"), 0.0), 6.0
     elif kind == "drift":
-        key = str(row.get("drift_ch") or "")
-        strength, center = max(abs(z(key)) if key else 0.0, 5.5), 5.5
+        med = row.get("drift_med")
+        if med is None or pd.isna(med):
+            med = row.get("drift_hold_med")
+        if med is None or pd.isna(med):
+            key = str(row.get("drift_ch") or row.get("drift_hold_ch") or "")
+            level = abs(z(key)) if key else 0.0
+        else:
+            level = abs(float(med))
+        strength, center = max(level, 5.5), 5.5
     elif kind == "calib":
         strength, center = max(abs(z(key)) for key in ("pd", "ps", "q", "i", "pw")), 8.0
     else:
@@ -182,6 +191,7 @@ def mark_drift(frame: pd.DataFrame) -> pd.DataFrame:
         g = g.sort_values("window_start_utc").copy()
         best = np.array([""] * len(g), dtype=object)
         best_score = np.zeros(len(g))
+        best_med = np.full(len(g), np.nan)
         steady = g["steady"].fillna(False).to_numpy()
         for key in DRIFT_CH:
             col = "z_" + key
@@ -204,7 +214,12 @@ def mark_drift(frame: pd.DataFrame) -> pd.DataFrame:
             take = ok & (score.fillna(0.0).to_numpy() > best_score)
             best_score = np.where(take, score.fillna(0.0).to_numpy(), best_score)
             best = np.where(take, key, best)
+            best_med = np.where(take, med.to_numpy(), best_med)
         g["drift_ch"] = best
+        g["drift_med"] = best_med
+        chosen = pd.Series(best, index=g.index).replace("", np.nan)
+        g["drift_hold_ch"] = chosen.ffill().fillna("").to_numpy()
+        g["drift_hold_med"] = pd.Series(best_med, index=g.index).ffill().to_numpy()
         parts.append(g)
     return pd.concat(parts, ignore_index=True)
 
@@ -346,7 +361,7 @@ def _top_channels(row: pd.Series, k: int = 3) -> str:
     for key, name in CH.items():
         val = row.get("z_" + key)
         if pd.notna(val) and abs(float(val)) >= 2.5:
-            scored.append((abs(float(val)), f"{name} z={float(val):+.1f}"))
+            scored.append((abs(float(val)), _reading(row, key)))
     scored.sort(reverse=True)
     return ", ".join(text for _, text in scored[:k]) or "no large level shift"
 
@@ -378,32 +393,158 @@ def head_note(row: pd.Series, asset: pd.Series) -> str:
     return f" Head is {pct:+.0f}% of rated head versus the pump curve at this speed and flow."
 
 
+def _z(row: pd.Series, key: str) -> float | None:
+    val = row.get("z_" + key)
+    return None if val is None or pd.isna(val) else float(val)
+
+
+def _zs(row: pd.Series, key: str) -> float | None:
+    val = row.get("zs_" + key)
+    return None if val is None or pd.isna(val) else float(val)
+
+
+_UNIT = {
+    "v": "mm/s", "a": "g", "c": "", "bt": "C",
+    "ps": "kPa", "pd": "kPa", "i": "A", "pw": "kW",
+    "q": "m3/h", "n": "rpm", "wt": "C", "tf": "C", "vp": "%",
+}
+
+
+def _reading(row: pd.Series, key: str, stat: str = "mean") -> str:
+    """Format a channel with its measured minute value, not its z-score."""
+    val = row.get(f"{CH[key]}__{stat}")
+    if val is None or pd.isna(val):
+        return CH[key]
+    shown = f"{float(val):.1f} {_UNIT[key]}".strip()
+    if stat == "std":
+        shown = f"spread {shown}"
+    return f"{CH[key]} ({shown})"
+
+
 def evidence_text(kind: str, row: pd.Series, asset: pd.Series) -> str:
-    detail = _top_channels(row)
+    """Describe the measurements that triggered this fault signature."""
     if kind == "gap":
-        detail = "minute is missing most samples"
+        detail = f"minute has {_num(row, 'rows'):.0f} samples (under 30)"
     elif kind == "stuck":
         frozen = [CH[key] for key in ("pd", "ps", "q", "bt", "i", "tf", "wt", "pw") if bool(row.get("flat_" + key, False))]
-        detail = (frozen[0] if frozen else "a transmitter") + " is frozen while the pump is running"
+        detail = (frozen[0] if frozen else "a transmitter") + " is frozen (minute spread is 0) while the pump is running"
+        if len(frozen) > 1:
+            detail += "; also frozen: " + ", ".join(frozen[1:])
     elif kind == "noise":
-        noisy = []
+        hits = []
         for key in ("pd", "ps", "q", "i", "pw", "bt", "v"):
-            val = row.get("zs_" + key)
-            if pd.notna(val) and float(val) > 12:
-                noisy.append(f"{CH[key]} spread z={float(val):+.1f}")
-        detail = ", ".join(noisy[:2]) or detail
+            spread, level = _zs(row, key), _z(row, key)
+            if spread is None or spread <= 18 or level is None or abs(level) >= 6:
+                continue
+            hits.append((spread, f"{_reading(row, key, 'std')}; {_reading(row, key)}"))
+        hits.sort(reverse=True)
+        detail = "; ".join(text for _, text in hits[:2]) or _top_channels(row)
     elif kind == "drift":
-        key = row.get("drift_ch") or ""
-        detail = f"{CH.get(key, 'a transmitter')} is walking away from this pump's normal while related channels stay put"
-    elif kind == "mis":
-        ratio = row.get("ratio_21")
-        extra = f", 2x/1x vibration = {float(ratio):.2f}" if pd.notna(ratio) else ""
-        detail = detail + extra
+        key = str(row.get("drift_ch") or "")
+        med = row.get("drift_med")
+        if not key:
+            key = str(row.get("drift_hold_ch") or "")
+            med = row.get("drift_hold_med")
+        name = CH.get(key, "a transmitter")
+        if key in CH and med is not None and pd.notna(med):
+            detail = f"{_reading(row, key)} is walking away; related channels stayed near their normal"
+        else:
+            detail = f"{name} is walking away from this pump's normal while related channels stay put"
+    elif kind == "calib":
+        named = None
+        named_z = 0.0
+        for key in CALIB_CH:
+            level = _z(row, key)
+            if level is None or abs(level) <= 8:
+                continue
+            pals = [_z(row, partner) for partner in COUPLED.get(key, [])]
+            pals = [abs(partner) for partner in pals if partner is not None]
+            if pals and max(pals) < 2.0 and abs(level) > abs(named_z):
+                named, named_z = key, level
+        if named is None:
+            detail = _top_channels(row)
+        else:
+            detail = f"{_reading(row, named)}; related channels stayed near their normal"
     elif kind == "bearing":
-        detail = detail + ". Crest factor / acceleration leads overall velocity"
+        bits = []
+        crest, accel, vel = _z(row, "c"), _z(row, "a"), _z(row, "v")
+        if crest is not None and crest > 6:
+            bits.append(_reading(row, "c"))
+        if accel is not None and accel > 7:
+            bits.append(_reading(row, "a"))
+        if vel is not None:
+            bits.append(_reading(row, "v"))
+        detail = "; ".join(bits) or _top_channels(row)
+    elif kind == "cav":
+        bits = []
+        for key in ("ps", "a", "pd"):
+            if _z(row, key) is not None:
+                bits.append(_reading(row, key))
+        detail = "; ".join(bits) or _top_channels(row)
+    elif kind == "air":
+        bits = []
+        for key in ("q", "pw", "ps"):
+            if _z(row, key) is not None:
+                bits.append(_reading(row, key))
+        detail = "; ".join(bits) or _top_channels(row)
+    elif kind == "restr":
+        pd_, q, current, power = (_z(row, key) for key in ("pd", "q", "i", "pw"))
+        ps, valve = _z(row, "ps"), _z(row, "vp")
+        high_head = pd_ is not None and pd_ > 3 and (
+            (q is not None and q < -4)
+            or (current is not None and current < -3)
+            or (power is not None and power < -4)
+        )
+        low_flow = (
+            q is not None
+            and q < -8
+            and pd_ is not None
+            and pd_ > 1.5
+            and (ps is None or ps > -4)
+        )
+        valve_restriction = (
+            valve is not None and valve < -6 and q is not None and q < -3
+        )
+        bits = []
+        if high_head:
+            bits.append(_reading(row, "pd"))
+            if q is not None and q < -4:
+                bits.append(_reading(row, "q"))
+            if power is not None and power < -4:
+                bits.append(_reading(row, "pw"))
+            if current is not None and current < -3:
+                bits.append(_reading(row, "i"))
+        elif low_flow:
+            bits.extend((_reading(row, "q"), _reading(row, "pd")))
+        elif valve_restriction:
+            bits.extend((_reading(row, "vp"), _reading(row, "q")))
+        detail = "; ".join(bits) or _top_channels(row)
+    elif kind == "clog":
+        bits = []
+        if _z(row, "ps") is not None:
+            bits.append(_reading(row, "ps"))
+        if _z(row, "pd") is not None:
+            bits.append(_reading(row, "pd"))
+        detail = "; ".join(bits) or _top_channels(row)
+    elif kind == "imp":
+        bits = []
+        for key in ("pd", "i", "ps"):
+            if _z(row, key) is not None:
+                bits.append(_reading(row, key))
+        detail = "; ".join(bits) or _top_channels(row)
+    elif kind in ("mis", "imb"):
+        vel, ratio = _z(row, "v"), row.get("ratio_21")
+        bits = []
+        if vel is not None:
+            bits.append(_reading(row, "v"))
+        if ratio is not None and pd.notna(ratio):
+            bits.append(f"2x/1x vibration ({float(ratio):.2f})")
+        detail = "; ".join(bits) or _top_channels(row)
+    else:
+        detail = _top_channels(row)
     if kind in ("air", "clog", "cav", "restr", "imp"):
         detail = detail + head_note(row, asset)
-    return "PolarMind: " + detail
+    return detail
 
 
 def alerts_for_asset(g: pd.DataFrame, asset: pd.Series) -> list:

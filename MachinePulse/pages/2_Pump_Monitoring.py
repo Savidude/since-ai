@@ -1,11 +1,12 @@
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from backend import MqttTelemetrySubscriber
 
 from utils.demo_data import get_pump_data, get_telemetry
+from utils.alert_display import render_current_alert_accordion
+from utils.telemetry_charts import SENSOR_CHART_OPTIONS, render_sensor_charts
 
 from utils.ui_components import setup_page, render_sidebar, page_header
 
@@ -54,7 +55,7 @@ if (
 
 selected_pump = st.selectbox("Select Equipment", pump_ids, key="monitoring_pump")
 
-live_mode = st.toggle("Live MQTT telemetry", value=True, key="live_mqtt_telemetry")
+live_mode = st.toggle("Live telemetry", value=True, key="live_mqtt_telemetry")
 
 
 # ==================================================
@@ -81,11 +82,6 @@ if live_mode:
     if subscriber.status not in {"error", "stopped"}:
         st_autorefresh(interval=2000, key=f"mqtt_refresh_{selected_pump}")
 
-    st.caption(f"MQTT subscription: {subscriber.status} " f"({subscriber.topic})")
-
-    if subscriber.error:
-        st.warning(f"MQTT connection error: {subscriber.error}")
-
     data = pd.DataFrame(subscriber.get_records())
 else:
     if subscriber is not None:
@@ -94,13 +90,22 @@ else:
 
     data = get_telemetry(selected_pump)
 
+data = data.drop(columns=["topic"], errors="ignore")
+
+if live_mode:
+    current_alert = subscriber.latest_alert
+    render_current_alert_accordion(
+        current_alert,
+        unavailable=bool(subscriber.alert_error or subscriber.error),
+    )
+
 if data.empty:
     if live_mode and subscriber.error:
         st.error(
-            "No MQTT telemetry is available. Check the AWS connection and permissions."
+            "Live pump data is currently unavailable. Please try again later."
         )
     elif live_mode:
-        st.info(f"Waiting for telemetry on {subscriber.topic}.")
+        st.info("Waiting for live pump measurements.")
     else:
         st.warning(f"No telemetry data available for {selected_pump}.")
     st.stop()
@@ -154,69 +159,14 @@ st.divider()
 
 st.subheader("Sensor Measurements")
 
-chart_options = {
-    "Motor Current": ("motor_current_a", "A"),
-    "Motor Power": ("motor_power_kw", "kW"),
-    "Motor Speed": ("motor_speed_rpm", "RPM"),
-    "Motor Winding Temperature": ("motor_winding_temp_c", "°C"),
-    "Suction Pressure": ("suction_pressure_kpa", "kPa"),
-    "Discharge Pressure": ("discharge_pressure_kpa", "kPa"),
-    "Fluid Temperature": ("fluid_temp_c", "°C"),
-    "Ambient Temperature": ("ambient_temp_c", "°C"),
-    "Flow Rate": ("flow_m3_h", "m³/h"),
-    "Valve Position": ("valve_position_pct", "%"),
-    "Vibration RMS": ("vibration_rms_mm_s", "mm/s"),
-    "Bearing Temperature": ("bearing_temp_c", "°C"),
-    "Vibration Acceleration RMS": ("vibration_accel_rms_g", "g"),
-    "Vibration Crest Factor": ("vibration_crest_factor", ""),
-}
-
-
 # ==================================================
 # DISPLAY AVAILABLE SENSOR CHARTS
 # ==================================================
 
-plotted_charts = 0
-
-for label, (column, unit) in chart_options.items():
-
-    if column not in data.columns:
-        continue
-
-    valid_data = data.dropna(subset=[column, "timestamp_utc"])
-
-    if valid_data.empty:
-        continue
-
-    with st.container(border=True):
-
-        st.markdown(f"#### {label}")
-
-        y_label = f"{label} ({unit})" if unit else label
-
-        fig = px.line(
-            valid_data,
-            x="timestamp_utc",
-            y=column,
-            template="plotly_white",
-            labels={"timestamp_utc": "Timestamp (UTC)", column: y_label},
-        )
-
-        fig.update_layout(
-            height=260,
-            margin=dict(l=10, r=10, t=15, b=10),
-            xaxis_title="Timestamp (UTC)",
-            yaxis_title=y_label,
-            showlegend=False,
-        )
-
-        st.plotly_chart(fig, width="stretch")
-
-        plotted_charts += 1
-
-
-if plotted_charts == 0:
-    st.warning("No valid sensor measurements available " "for this pump.")
+render_sensor_charts(
+    data,
+    empty_message="No valid sensor measurements available for this pump.",
+)
 
 
 # ==================================================
@@ -229,7 +179,7 @@ st.subheader("Latest Sensor Readings")
 
 latest_readings = []
 
-for label, (column, unit) in chart_options.items():
+for label, (column, unit) in SENSOR_CHART_OPTIONS.items():
 
     if column not in data.columns:
         continue

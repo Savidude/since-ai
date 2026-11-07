@@ -13,6 +13,11 @@ import streamlit as st
 # ==================================================
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+PUMP_ALERTS_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "device_simulator"
+    / "pump_alerts"
+)
 
 # Common fields across the pump datasets
 TELEMETRY_COLUMNS = [
@@ -271,3 +276,37 @@ def get_pump_data():
         })
 
     return pd.DataFrame(pump_records)
+
+
+# ==================================================
+# GET HISTORICAL FAULT EVENTS
+# ==================================================
+
+def get_historical_fault_events(pump_id):
+
+    alert_file = PUMP_ALERTS_DIR / f"pump-alerts-{pump_id}.json"
+
+    if not alert_file.exists():
+        return []
+
+    with alert_file.open(
+        "r",
+        encoding="utf-8"
+    ) as file:
+        alerts = json.load(file)
+
+    return [
+        {
+            "fault": alert["fault_type"],
+            "timestamp": (
+                alert.get("alert_time_utc")
+                or alert["minute_utc"]
+            ),
+            "event_class": alert.get("event_class"),
+            "confidence": alert.get("confidence"),
+            "evidence": alert.get("evidence"),
+            "recommended_action": alert.get("recommended_action"),
+        }
+        for alert in alerts
+        if alert.get("phase") == "alert"
+    ]

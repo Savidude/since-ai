@@ -10,7 +10,8 @@ from utils.ui_components import (
 
 from utils.demo_data import (
     get_pump_data,
-    get_telemetry
+    get_telemetry,
+    get_historical_fault_events
 )
 
 
@@ -159,18 +160,23 @@ PUMP_06_FAULTS = [
 
 
 # ==================================================
-# PUMP-06: HISTORICAL FAULT DIAGNOSIS
+# HISTORICAL FAULT DIAGNOSIS
 # ==================================================
 
-if selected_pump == "PUMP-06":
+historical_fault_events = (
+    PUMP_06_FAULTS
+    if selected_pump == "PUMP-06"
+    else get_historical_fault_events(selected_pump)
+)
 
+if selected_pump == "PUMP-06":
     st.divider()
 
     st.subheader("📋 Historical Fault Events")
 
     st.caption(
         "The following fault events were identified in "
-        "the historical data of PUMP-06. "
+        f"the historical data of {selected_pump}. "
         "Select an event to investigate its telemetry."
     )
 
@@ -219,8 +225,23 @@ if selected_pump == "PUMP-06":
 
     st.divider()
 
-    # Display historical fault events
-    for index, event in enumerate(PUMP_06_FAULTS):
+elif historical_fault_events:
+
+    st.divider()
+
+    st.subheader("📋 Historical Fault Events")
+
+    st.caption(
+        "The following fault events were identified in "
+        f"the historical data of {selected_pump}. "
+        "Select an event to investigate its telemetry."
+    )
+
+
+# Display historical fault events
+if historical_fault_events:
+
+    for index, event in enumerate(historical_fault_events):
 
         fault_name = event["fault"]
 
@@ -246,17 +267,53 @@ if selected_pump == "PUMP-06":
                     )
                 )
 
-                if event["severity"] == "High":
+                severity = event.get("severity")
+
+                if severity == "High":
 
                     st.error(
-                        f"Severity: {event['severity']}"
+                        f"Severity: {severity}"
+                    )
+
+                elif severity:
+
+                    st.warning(
+                        f"Severity: {severity}"
                     )
 
                 else:
 
-                    st.warning(
-                        f"Severity: {event['severity']}"
-                    )
+                    alert_details = []
+
+                    if event.get("event_class"):
+                        alert_details.append(
+                            f"Class: {event['event_class']}"
+                        )
+
+                    confidence = event.get("confidence")
+
+                    if confidence is not None:
+                        alert_details.append(
+                            f"Confidence: {confidence:.0%}"
+                        )
+
+                    if alert_details:
+                        st.caption(" | ".join(alert_details))
+
+                evidence = event.get("evidence")
+                recommended_action = event.get("recommended_action")
+
+                if evidence or recommended_action:
+
+                    with st.expander("Alert details"):
+
+                        if evidence:
+                            st.markdown("**Evidence**")
+                            st.write(evidence)
+
+                        if recommended_action:
+                            st.markdown("**Recommended action**")
+                            st.write(recommended_action)
 
             with col2:
 
@@ -264,8 +321,8 @@ if selected_pump == "PUMP-06":
 
                 if st.button(
                     "📈 Replay",
-                    key=f"fault_replay_{index}",
-                    width="stretch"
+                    key=f"fault_replay_{selected_pump}_{index}",
+                    use_container_width=True
                 ):
 
                     # Pass selected pump to History Replay
@@ -290,10 +347,10 @@ if selected_pump == "PUMP-06":
 
 
 # ==================================================
-# PUMP-01 TO PUMP-05: ILLUSTRATIVE DIAGNOSES
+# ILLUSTRATIVE DIAGNOSES
 # ==================================================
 
-elif selected_pump in demo_diagnoses:
+if selected_pump in demo_diagnoses:
 
     result = demo_diagnoses[selected_pump]
 
@@ -336,16 +393,15 @@ elif selected_pump in demo_diagnoses:
 # OTHER PUMPS: DIAGNOSIS NOT YET AVAILABLE
 # ==================================================
 
-else:
+elif selected_pump != "PUMP-06":
 
     st.divider()
 
     st.info(
-        f"No fault diagnosis data is currently configured "
+        f"No current model diagnosis is configured "
         f"for {selected_pump}."
     )
 
     st.warning(
-        "Fault classification and confidence are not available "
-        "for this pump yet. No fault prediction has been generated."
+        "No current fault prediction has been generated for this pump."
     )
