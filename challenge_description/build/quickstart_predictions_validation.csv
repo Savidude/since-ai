@@ -1,0 +1,7 @@
+asset_id,alert_time_utc,event_class,fault_type,confidence,evidence,recommended_action
+PUMP-08,2025-09-10T12:38:00Z,MACHINE,SUCTION_STRAINER_CLOGGING,0.5587498346964518,B1 mode-aware z: suction_pressure_kpa z=-6.7,Inspect / clean suction strainer.
+PUMP-08,2025-09-11T01:29:00Z,MACHINE,SUCTION_STRAINER_CLOGGING,0.7656943003336588,B1 mode-aware z: suction_pressure_kpa z=-9.2,Inspect / clean suction strainer.
+PUMP-08,2025-09-11T20:47:00Z,MACHINE,UNKNOWN,0.5298386812210083,B1 mode-aware z: fluid_temp_c z=-6.4,Inspect pump.
+PUMP-08,2025-09-13T00:07:00Z,SENSOR,COMMUNICATION_LOSS,0.05,B1 mode-aware z: missing rows,Check gateway / network; data gap.
+PUMP-08,2025-09-13T13:07:00Z,MACHINE,UNKNOWN,0.5287366708119711,B1 mode-aware z: fluid_temp_c z=-6.3,Inspect pump.
+PUMP-08,2025-09-14T01:18:00Z,MACHINE,UNKNOWN,0.5111027956008911,B1 mode-aware z: fluid_temp_c z=-6.1,Inspect pump.
