@@ -1,0 +1,68 @@
+[
+  {
+    "asset_id": "PUMP-06",
+    "minute_utc": "2025-10-09T07:46:00Z",
+    "phase": "alert",
+    "event_class": "MACHINE",
+    "fault_type": "SUCTION_STRAINER_CLOGGING",
+    "confidence": 0.54,
+    "evidence": "PolarMind: bearing_temp_c z=-7.1, suction_pressure_kpa z=-6.4",
+    "recommended_action": "Inspect and clean the suction strainer at the next safe opportunity.",
+    "alert_time_utc": "2025-10-09T07:47:00Z"
+  },
+  {
+    "asset_id": "PUMP-06",
+    "minute_utc": "2025-10-09T09:12:00Z",
+    "phase": "alert",
+    "event_class": "SENSOR",
+    "fault_type": "SENSOR_DRIFT",
+    "confidence": 0.51,
+    "evidence": "PolarMind: suction_pressure_kpa is walking away from this pump's normal while related channels stay put",
+    "recommended_action": "Recalibrate or replace the drifting transmitter. Do not adjust the pump on this reading alone.",
+    "alert_time_utc": "2025-10-09T09:13:00Z"
+  },
+  {
+    "asset_id": "PUMP-06",
+    "minute_utc": "2025-10-09T21:44:00Z",
+    "phase": "alert",
+    "event_class": "MACHINE",
+    "fault_type": "CAVITATION",
+    "confidence": 0.84,
+    "evidence": "PolarMind: suction_pressure_kpa z=-15.2, discharge_pressure_kpa z=-5.6, vibration_crest_factor z=+3.8",
+    "recommended_action": "Check the suction strainer, level and valve opening. Reduce flow if the operator approves.",
+    "alert_time_utc": "2025-10-09T21:45:00Z"
+  },
+  {
+    "asset_id": "PUMP-06",
+    "minute_utc": "2025-10-09T21:50:00Z",
+    "phase": "alert",
+    "event_class": "MACHINE",
+    "fault_type": "BEARING_WEAR",
+    "confidence": 0.64,
+    "evidence": "PolarMind: suction_pressure_kpa z=-15.6, vibration_rms_mm_s z=+7.7, discharge_pressure_kpa z=-6.8. Crest factor / acceleration leads overall velocity",
+    "recommended_action": "Inspect the pump bearing and lubrication. Plan a bearing change before velocity and temperature rise.",
+    "alert_time_utc": "2025-10-09T21:51:00Z"
+  },
+  {
+    "asset_id": "PUMP-06",
+    "minute_utc": "2025-10-10T00:20:00Z",
+    "phase": "alert",
+    "event_class": "SENSOR",
+    "fault_type": "SENSOR_CALIBRATION_SHIFT",
+    "confidence": 0.54,
+    "evidence": "PolarMind: suction_pressure_kpa z=-8.6",
+    "recommended_action": "Check the recent calibration and the impulse line. Verify the reading against a reference.",
+    "alert_time_utc": "2025-10-10T00:21:00Z"
+  },
+  {
+    "asset_id": "PUMP-06",
+    "minute_utc": "2025-10-10T09:03:00Z",
+    "phase": "alert",
+    "event_class": "MACHINE",
+    "fault_type": "MISALIGNMENT",
+    "confidence": 0.05,
+    "evidence": "PolarMind: suction_pressure_kpa z=-16.5, discharge_pressure_kpa z=-10.2, motor_current_a z=-4.4, 2x/1x vibration = 3.61",
+    "recommended_action": "Check coupling alignment, especially if the set was recently reassembled.",
+    "alert_time_utc": "2025-10-10T09:04:00Z"
+  }
+]

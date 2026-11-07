@@ -243,6 +243,8 @@ def test_listener_command_timestamp_becomes_replay_start(
             "--data",
             "data/full",
             "--listen-for-replay",
+            "--model",
+            "none",
             "--end",
             "2025-10-11T00:00:00Z",
             "--limit",

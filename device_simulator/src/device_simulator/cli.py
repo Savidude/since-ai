@@ -10,6 +10,7 @@ from awscrt.exceptions import AwsCrtError
 import boto3
 from botocore.exceptions import BotoCoreError
 
+from .predictors import available_predictors, create_predictor
 from .provisioning import AwsIotProvisioner
 from .publisher import publish_replay_telemetry
 from .replay import DEFAULT_START
@@ -73,13 +74,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--limit",
         type=int,
-        help="Maximum number of replay messages.",
+        help="Maximum number of published minute messages.",
     )
     parser.add_argument(
         "--speed",
         type=_nonnegative_float,
         default=1.0,
-        help="Replay speed factor (0 = as fast as possible, 1 = real time).",
+        help="Replay speed factor (0 = as fast as possible, 1 = one minute per minute).",
+    )
+    parser.add_argument(
+        "--model",
+        choices=available_predictors(),
+        default="polar-mind",
+        help="Prediction adapter to run (default: polar-mind; use none to disable).",
     )
     parser.add_argument(
         "--verbose",
@@ -100,7 +107,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     session = boto3.Session(region_name=args.region)
     region = session.region_name
     if not region:
-        parser.error("No AWS region configured; pass --region or configure a default region.")
+        parser.error(
+            "No AWS region configured; pass --region or configure a default region."
+        )
 
     try:
         provisioner = AwsIotProvisioner(
@@ -122,7 +131,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.listen_for_replay:
             credentials = session.get_credentials()
             if credentials is None:
-                raise ValueError("No AWS credentials available for the replay listener.")
+                raise ValueError(
+                    "No AWS credentials available for the replay listener."
+                )
             listener_stop_event = Event()
             replay_errors: list[Exception] = []
             initial_replay_client = session.client(
@@ -153,6 +164,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                 def publish_replay() -> None:
                     try:
+                        predictor = create_predictor(
+                            args.model,
+                            data_dir=args.data,
+                            asset=args.thing_name,
+                        )
                         publish_replay_telemetry(
                             initial_replay_client,
                             device,
@@ -163,6 +179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             limit=args.limit,
                             speed=args.speed,
                             stop_event=current_stop_event,
+                            predictor=predictor,
                         )
                     except (BotoCoreError, OSError, ValueError) as error:
                         replay_errors.append(error)
@@ -205,6 +222,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 end=args.end,
                 limit=args.limit,
                 speed=args.speed,
+                predictor=create_predictor(
+                    args.model,
+                    data_dir=args.data,
+                    asset=args.thing_name,
+                ),
             )
     except KeyboardInterrupt:
         LOGGER.info("Stopped.")

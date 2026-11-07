@@ -10,10 +10,16 @@ from threading import Event
 
 from botocore.client import BaseClient
 
+from .predictors.base import PredictorAdapter
 from .provisioning import Device
-from .replay import DEFAULT_START, iter_replay_payloads
+from .replay import DEFAULT_START, iter_replay_minutes
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _print_prediction(prediction: dict[str, object], *, warmup: bool = False) -> None:
+    label = "Warm-up prediction" if warmup else "Prediction"
+    print(f"{label}: {json.dumps(prediction, separators=(',', ':'))}", flush=True)
 
 
 def publish_replay_telemetry(
@@ -27,21 +33,44 @@ def publish_replay_telemetry(
     limit: int | None = None,
     speed: float = 1.0,
     stop_event: Event | None = None,
+    predictor: PredictorAdapter | None = None,
 ) -> int:
     if not math.isfinite(speed) or speed < 0:
         raise ValueError("speed must be a finite, non-negative number.")
 
     LOGGER.info("Replaying telemetry as %s to %s", device.thing_name, device.topic)
+    if predictor is not None:
+        LOGGER.info("Warming predictor with up to 24 hours of prior telemetry")
     previous_timestamp: datetime | None = None
     published = 0
-    for payload in iter_replay_payloads(data_dir, asset, start, end, limit):
+    warmup_minutes = 0
+    warmup_complete = predictor is None
+    for minute in iter_replay_minutes(
+        data_dir,
+        asset,
+        start,
+        end,
+        limit,
+        warmup_hours=24 if predictor is not None else 0,
+    ):
         if stop_event is not None and stop_event.is_set():
             break
+        if minute.is_warmup:
+            if predictor is not None:
+                warmup_minutes += 1
+                prediction = predictor.process_minute(minute)
+                if prediction is not None and prediction.get("fault_type") is not None:
+                    _print_prediction(dict(prediction), warmup=True)
+                if warmup_minutes % 360 == 0:
+                    LOGGER.info("Predictor warm-up processed %d prior minutes", warmup_minutes)
+            continue
+
+        if not warmup_complete:
+            LOGGER.info("Predictor warm-up complete after %d prior minutes", warmup_minutes)
+            warmup_complete = True
+
         if speed > 0:
-            timestamp_text = str(payload["timestamp_utc"])
-            if timestamp_text.endswith("Z"):
-                timestamp_text = f"{timestamp_text[:-1]}+00:00"
-            timestamp = datetime.fromisoformat(timestamp_text)
+            timestamp = minute.timestamp.to_pydatetime()
             if previous_timestamp is not None:
                 delay = (timestamp - previous_timestamp).total_seconds() / speed
                 delay = max(0.0, delay)
@@ -53,11 +82,15 @@ def publish_replay_telemetry(
 
         iot_data_client.publish(
             topic=device.topic,
-            payload=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+            payload=json.dumps(minute.telemetry, separators=(",", ":")).encode("utf-8"),
             qos=1,
         )
         published += 1
-        LOGGER.info("Published replay telemetry message %d", published)
+        if predictor is not None:
+            prediction = predictor.process_minute(minute)
+            if prediction is not None:
+                _print_prediction(dict(prediction))
+        LOGGER.info("Published replay telemetry minute %d", published)
 
-    LOGGER.info("Replayed %d telemetry messages", published)
+    LOGGER.info("Replayed %d telemetry minutes", published)
     return published
