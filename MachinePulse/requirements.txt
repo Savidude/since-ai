@@ -1,0 +1,4 @@
+awscrt>=0.20
+awsiotsdk>=1.21
+boto3>=1.34
+streamlit-autorefresh>=1.0.1
