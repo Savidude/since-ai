@@ -6,7 +6,7 @@
     "event_class": "MACHINE",
     "fault_type": "DISCHARGE_RESTRICTION",
     "confidence": 0.62,
-    "evidence": "PolarMind: flow_m3_h z=-4.1, valve_position_pct z=-4.1, motor_power_kw z=-3.4 Head is -7% of rated head versus the pump curve at this speed and flow.",
+    "evidence": "PolarMind: flow_m3_h 4.1, valve_position_pct 4.1, motor_power_kw 3.4. Head is 7% below the pump curve at this speed and flow.",
     "recommended_action": "Check discharge valves and heat-exchanger fouling. Confirm the valve was reopened after maintenance.",
     "alert_time_utc": "2025-11-25T01:23:00Z"
   },
@@ -17,7 +17,7 @@
     "event_class": "MACHINE",
     "fault_type": "SUCTION_STRAINER_CLOGGING",
     "confidence": 0.64,
-    "evidence": "PolarMind: suction_pressure_kpa z=-7.7, bearing_temp_c z=-6.6, discharge_pressure_kpa z=-4.5 Head is -7% of rated head versus the pump curve at this speed and flow.",
+    "evidence": "PolarMind: suction_pressure_kpa 7.7, bearing_temp_c 6.6, discharge_pressure_kpa 4.5. Head is 7% below the pump curve at this speed and flow.",
     "recommended_action": "Inspect and clean the suction strainer at the next safe opportunity.",
     "alert_time_utc": "2025-11-26T18:59:00Z"
   },
@@ -28,7 +28,7 @@
     "event_class": "MACHINE",
     "fault_type": "CAVITATION",
     "confidence": 0.99,
-    "evidence": "PolarMind: suction_pressure_kpa z=-22.7, discharge_pressure_kpa z=-15.6, vibration_accel_rms_g z=+14.9 Head is -9% of rated head versus the pump curve at this speed and flow.",
+    "evidence": "PolarMind: suction_pressure_kpa 22.7, discharge_pressure_kpa 15.6, vibration_accel_rms_g 14.9. Head is 9% below the pump curve at this speed and flow.",
     "recommended_action": "Check the suction strainer, level and valve opening. Reduce flow if the operator approves.",
     "alert_time_utc": "2025-11-27T10:28:00Z"
   },
@@ -39,7 +39,7 @@
     "event_class": "MACHINE",
     "fault_type": "BEARING_WEAR",
     "confidence": 0.93,
-    "evidence": "PolarMind: suction_pressure_kpa z=-22.6, discharge_pressure_kpa z=-15.0, vibration_accel_rms_g z=+11.2. Crest factor / acceleration leads overall velocity",
+    "evidence": "PolarMind: suction_pressure_kpa 22.6, discharge_pressure_kpa 15.0, vibration_accel_rms_g 11.2. Crest factor / acceleration leads overall velocity",
     "recommended_action": "Inspect the pump bearing and lubrication. Plan a bearing change before velocity and temperature rise.",
     "alert_time_utc": "2025-11-27T10:34:00Z"
   },
@@ -50,7 +50,7 @@
     "event_class": "MACHINE",
     "fault_type": "IMBALANCE",
     "confidence": 0.99,
-    "evidence": "PolarMind: vibration_accel_rms_g z=+97.9, discharge_pressure_kpa z=-32.2, vibration_rms_mm_s z=+29.6",
+    "evidence": "PolarMind: vibration_accel_rms_g 97.9, discharge_pressure_kpa 32.2, vibration_rms_mm_s 29.6",
     "recommended_action": "Inspect the impeller for deposits or damage and check balance.",
     "alert_time_utc": "2025-11-27T18:38:00Z"
   },
@@ -61,7 +61,7 @@
     "event_class": "MACHINE",
     "fault_type": "MISALIGNMENT",
     "confidence": 0.99,
-    "evidence": "PolarMind: vibration_accel_rms_g z=+107.9, discharge_pressure_kpa z=-35.4, vibration_rms_mm_s z=+29.5, 2x/1x vibration = 1.30",
+    "evidence": "PolarMind: vibration_accel_rms_g 107.9, discharge_pressure_kpa 35.4, vibration_rms_mm_s 29.5, 2x/1x vibration = 1.30",
     "recommended_action": "Check coupling alignment, especially if the set was recently reassembled.",
     "alert_time_utc": "2025-11-28T01:10:00Z"
   },
@@ -83,7 +83,7 @@
     "event_class": "MACHINE",
     "fault_type": "BEARING_WEAR",
     "confidence": 0.59,
-    "evidence": "PolarMind: vibration_crest_factor z=+7.0, discharge_pressure_kpa z=-5.1, valve_position_pct z=+5.1. Crest factor / acceleration leads overall velocity",
+    "evidence": "PolarMind: vibration_crest_factor 7.0, discharge_pressure_kpa 5.1, valve_position_pct 5.1. Crest factor / acceleration leads overall velocity",
     "recommended_action": "Inspect the pump bearing and lubrication. Plan a bearing change before velocity and temperature rise.",
     "alert_time_utc": "2025-11-29T04:56:00Z"
   }

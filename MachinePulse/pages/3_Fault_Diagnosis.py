@@ -4,13 +4,11 @@ import pandas as pd
 
 from utils.ui_components import (
     setup_page,
-    render_sidebar,
-    page_header
+    render_sidebar
 )
 
 from utils.demo_data import (
     get_pump_data,
-    get_telemetry,
     get_historical_fault_events
 )
 
@@ -23,10 +21,9 @@ setup_page("Fault Diagnosis", "🧠")
 
 render_sidebar()
 
-page_header(
-    "AI Fault Diagnosis",
-    "Predicted faults, supporting evidence and uncertainty."
-)
+st.title("AI Fault Diagnosis")
+st.subheader("Historical fault records and supporting details.")
+st.divider()
 
 
 # ==================================================
@@ -46,366 +43,171 @@ if pumps.empty:
 
 pump_ids = pumps["pump_id"].tolist()
 
+st.subheader("Select Pump")
+
 selected_pump = st.selectbox(
     "Select Pump",
     pump_ids,
-    key="fault_diagnosis_pump"
+    index=pump_ids.index("PUMP-02") if "PUMP-02" in pump_ids else 0,
+    key="fault_diagnosis_pump",
+    label_visibility="collapsed"
 )
-
-
-# ==================================================
-# ILLUSTRATIVE DIAGNOSIS RESULTS
-# ==================================================
-
-demo_diagnoses = {
-
-    "PUMP-01": {
-        "fault": "No fault detected",
-        "class": "Normal",
-        "confidence": 0.96,
-        "evidence": [
-            "Vibration within normal range",
-            "Temperature stable",
-            "Pressure measurements consistent"
-        ]
-    },
-
-    "PUMP-02": {
-        "fault": "Possible vibration anomaly",
-        "class": "Machine",
-        "confidence": 0.82,
-        "evidence": [
-            "Increasing vibration amplitude",
-            "Deviation from historical baseline"
-        ]
-    },
-
-    "PUMP-03": {
-        "fault": "Possible bearing wear",
-        "class": "Machine",
-        "confidence": 0.92,
-        "evidence": [
-            "Increasing vibration",
-            "Rising temperature",
-            "Abnormal trend in recent measurements"
-        ]
-    },
-
-    "PUMP-04": {
-        "fault": "No fault detected",
-        "class": "Normal",
-        "confidence": 0.95,
-        "evidence": [
-            "Stable sensor measurements",
-            "No significant anomaly"
-        ]
-    },
-
-    "PUMP-05": {
-        "fault": "Possible pressure sensor anomaly",
-        "class": "Instrument",
-        "confidence": 0.78,
-        "evidence": [
-            "Pressure deviation",
-            "Other measurements relatively stable"
-        ]
-    }
-
-}
-
-
-# ==================================================
-# PUMP-06 HISTORICAL FAULT EVENTS
-# ==================================================
-
-PUMP_06_FAULTS = [
-
-    {
-        "fault": "SUCTION_STRAINER_CLOGGING",
-        "timestamp": "2025-10-09T07:47:00Z",
-        "severity": "High"
-    },
-
-    {
-        "fault": "SENSOR_DRIFT",
-        "timestamp": "2025-10-09T09:13:00Z",
-        "severity": "Medium"
-    },
-
-    {
-        "fault": "CAVITATION",
-        "timestamp": "2025-10-09T21:45:00Z",
-        "severity": "High"
-    },
-
-    {
-        "fault": "BEARING_WEAR",
-        "timestamp": "2025-10-09T21:51:00Z",
-        "severity": "High"
-    },
-
-    {
-        "fault": "SENSOR_CALIBRATION_SHIFT",
-        "timestamp": "2025-10-10T00:21:00Z",
-        "severity": "Medium"
-    },
-
-    {
-        "fault": "MISALIGNMENT",
-        "timestamp": "2025-10-10T09:04:00Z",
-        "severity": "High"
-    }
-
-]
 
 
 # ==================================================
 # HISTORICAL FAULT DIAGNOSIS
 # ==================================================
 
-historical_fault_events = (
-    PUMP_06_FAULTS
-    if selected_pump == "PUMP-06"
-    else get_historical_fault_events(selected_pump)
+historical_fault_events = get_historical_fault_events(selected_pump)
+
+if not historical_fault_events:
+    st.markdown(
+        """
+        <div style="
+            min-height: 45vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        ">
+            <p style="font-size: 1.75rem; margin-bottom: 0.5rem;">
+                Faults have not been detected.
+            </p>
+            <p style="font-size: 1.1rem;">
+                Please select another pump.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.stop()
+
+st.divider()
+
+st.markdown(
+    """
+    <style>
+    div[data-testid="stVerticalBlock"][class*="st-key-fault-event-"] {
+        margin-bottom: 1rem;
+        border: 2px solid #52647b !important;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 3px 10px rgba(15, 35, 65, 0.12);
+    }
+
+    [class*="st-key-fault-event-"] [data-testid="stExpander"] summary p {
+        font-size: 1rem !important;
+    }
+
+    [class*="st-key-fault_replay_"] button {
+        color: #15395f !important;
+        background: #e8f1ff !important;
+        border-color: #bfd1e5 !important;
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+    }
+
+    [class*="st-key-fault_replay_"] button p {
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+    }
+
+    [class*="st-key-fault_replay_"] button [data-testid="stIconMaterial"] {
+        font-size: 1.6rem !important;
+        line-height: 1 !important;
+    }
+
+    [class*="st-key-fault_replay_"] button:hover {
+        color: #10213d !important;
+        background: #dceaff !important;
+        border-color: #a9bfd9 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-if selected_pump == "PUMP-06":
-    st.divider()
+st.subheader("📋 Historical Fault Events")
 
-    st.subheader("📋 Historical Fault Events")
+for index, event in enumerate(historical_fault_events):
 
-    st.caption(
-        "The following fault events were identified in "
-        f"the historical data of {selected_pump}. "
-        "Select an event to investigate its telemetry."
+    fault_name = event["fault"]
+    fault_timestamp = pd.to_datetime(
+        event["timestamp"],
+        utc=True
     )
 
-    # Latest equipment information
-    data = get_telemetry(selected_pump)
+    with st.container(
+        border=True,
+        key=f"fault-event-{selected_pump}-{index}"
+    ):
 
-    if not data.empty:
+        event_column, replay_column = st.columns([6, 1])
 
-        latest = data.iloc[-1]
+        with event_column:
+            st.markdown(f"**{fault_name}**")
 
-        st.markdown("### Latest Equipment Information")
+            event_metadata = [
+                "🕒 "
+                + fault_timestamp.strftime("%d %b %Y, %H:%M:%S UTC")
+            ]
 
-        col1, col2 = st.columns(2)
+            severity = str(event.get("severity") or "").strip()
+            if severity:
+                severity_icon = {
+                    "high": "🔴",
+                    "medium": "🟠",
+                    "low": "🟡",
+                }.get(severity.casefold(), "⚪")
+                event_metadata.append(f"{severity_icon} {severity}")
 
-        with col1:
+            if event.get("event_class"):
+                event_metadata.append(f"Class: {event['event_class']}")
 
-            st.metric(
-                "Operating Mode",
-                str(
-                    latest.get(
-                        "operating_mode",
-                        "Unknown"
-                    )
-                ).upper()
-            )
+            confidence = event.get("confidence")
+            if confidence is not None:
+                event_metadata.append(f"Confidence: {confidence:.0%}")
 
-        with col2:
+            st.caption(" · ".join(event_metadata))
 
-            motor_current = latest.get(
-                "motor_current_a"
-            )
+        with replay_column:
+            if st.button(
+                "Replay",
+                key=f"fault_replay_{selected_pump}_{index}",
+                icon=":material/play_arrow:",
+                use_container_width=True
+            ):
 
-            st.metric(
-                "Motor Current",
-                (
-                    f"{motor_current:.2f} A"
-                    if pd.notna(motor_current)
-                    else "N/A"
-                )
-            )
+                st.session_state[
+                    "history_pump_from_fault"
+                ] = selected_pump
 
-        st.caption(
-            f"Latest recorded timestamp: "
-            f"{latest['timestamp_utc']}"
-        )
+                st.session_state[
+                    "history_target_timestamp"
+                ] = event["timestamp"]
 
-    st.divider()
+                st.session_state[
+                    "selected_fault"
+                ] = fault_name
 
-elif historical_fault_events:
+                st.session_state[
+                    "history_fault_severity"
+                ] = event.get("severity")
 
-    st.divider()
-
-    st.subheader("📋 Historical Fault Events")
-
-    st.caption(
-        "The following fault events were identified in "
-        f"the historical data of {selected_pump}. "
-        "Select an event to investigate its telemetry."
-    )
-
-
-# Display historical fault events
-if historical_fault_events:
-
-    for index, event in enumerate(historical_fault_events):
-
-        fault_name = event["fault"]
-
-        fault_timestamp = pd.to_datetime(
-            event["timestamp"],
-            utc=True
-        )
-
-        with st.container(border=True):
-
-            col1, col2 = st.columns([4, 1])
-
-            with col1:
-
-                st.markdown(
-                    f"### 🔴 {fault_name}"
+                st.switch_page(
+                    "pages/5_History_Replay.py"
                 )
 
-                st.caption(
-                    "🕒 "
-                    + fault_timestamp.strftime(
-                        "%d %b %Y, %H:%M:%S UTC"
-                    )
-                )
+        evidence = event.get("evidence")
+        recommended_action = event.get("recommended_action")
 
-                severity = event.get("severity")
+        if evidence or recommended_action:
+            with st.expander("Alert details"):
+                if evidence:
+                    st.markdown("**Evidence**")
+                    st.write(evidence)
 
-                if severity == "High":
-
-                    st.error(
-                        f"Severity: {severity}"
-                    )
-
-                elif severity:
-
-                    st.warning(
-                        f"Severity: {severity}"
-                    )
-
-                else:
-
-                    alert_details = []
-
-                    if event.get("event_class"):
-                        alert_details.append(
-                            f"Class: {event['event_class']}"
-                        )
-
-                    confidence = event.get("confidence")
-
-                    if confidence is not None:
-                        alert_details.append(
-                            f"Confidence: {confidence:.0%}"
-                        )
-
-                    if alert_details:
-                        st.caption(" | ".join(alert_details))
-
-                evidence = event.get("evidence")
-                recommended_action = event.get("recommended_action")
-
-                if evidence or recommended_action:
-
-                    with st.expander("Alert details"):
-
-                        if evidence:
-                            st.markdown("**Evidence**")
-                            st.write(evidence)
-
-                        if recommended_action:
-                            st.markdown("**Recommended action**")
-                            st.write(recommended_action)
-
-            with col2:
-
-                st.write("")
-
-                if st.button(
-                    "📈 Replay",
-                    key=f"fault_replay_{selected_pump}_{index}",
-                    use_container_width=True
-                ):
-
-                    # Pass selected pump to History Replay
-                    st.session_state[
-                        "history_pump_from_fault"
-                    ] = selected_pump
-
-                    # Pass fault timestamp
-                    st.session_state[
-                        "history_target_timestamp"
-                    ] = event["timestamp"]
-
-                    # Pass fault name
-                    st.session_state[
-                        "selected_fault"
-                    ] = fault_name
-
-                    st.session_state[
-                        "history_fault_severity"
-                    ] = event.get("severity")
-
-                    # Navigate to History Replay
-                    st.switch_page(
-                        "pages/5_History_Replay.py"
-                    )
-
-
-# ==================================================
-# ILLUSTRATIVE DIAGNOSES
-# ==================================================
-
-if selected_pump in demo_diagnoses:
-
-    result = demo_diagnoses[selected_pump]
-
-    st.divider()
-
-    st.subheader("Prediction Result")
-
-    st.markdown(
-        f"### {result['fault']}"
-    )
-
-    st.write(
-        f"Classification: {result['class']}"
-    )
-
-    st.progress(
-        result["confidence"]
-    )
-
-    st.write(
-        f"Illustrative confidence: "
-        f"{result['confidence']:.0%}"
-    )
-
-    st.divider()
-
-    st.subheader("Supporting Evidence")
-
-    for item in result["evidence"]:
-
-        st.success(item)
-
-    st.info(
-        "These are illustrative frontend predictions. "
-        "Actual model outputs will be integrated later."
-    )
-
-
-# ==================================================
-# OTHER PUMPS: DIAGNOSIS NOT YET AVAILABLE
-# ==================================================
-
-elif selected_pump != "PUMP-06":
-
-    st.divider()
-
-    st.info(
-        f"No current model diagnosis is configured "
-        f"for {selected_pump}."
-    )
-
-    st.warning(
-        "No current fault prediction has been generated for this pump."
-    )
+                if recommended_action:
+                    st.markdown("**Recommended action**")
+                    st.write(recommended_action)

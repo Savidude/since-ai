@@ -6,7 +6,7 @@
     "event_class": "MACHINE",
     "fault_type": "SUCTION_STRAINER_CLOGGING",
     "confidence": 0.65,
-    "evidence": "PolarMind: suction_pressure_kpa z=-7.8, bearing_temp_c z=-7.1",
+    "evidence": "PolarMind: suction_pressure_kpa 7.8, bearing_temp_c 7.1",
     "recommended_action": "Inspect and clean the suction strainer at the next safe opportunity.",
     "alert_time_utc": "2025-10-09T07:47:00Z"
   },
@@ -28,7 +28,7 @@
     "event_class": "SENSOR",
     "fault_type": "SENSOR_CALIBRATION_SHIFT",
     "confidence": 0.5,
-    "evidence": "PolarMind: suction_pressure_kpa z=-8.0",
+    "evidence": "PolarMind: suction_pressure_kpa 8.0",
     "recommended_action": "Check the recent calibration and the impulse line. Verify the reading against a reference.",
     "alert_time_utc": "2025-10-09T17:38:00Z"
   },
@@ -39,7 +39,7 @@
     "event_class": "MACHINE",
     "fault_type": "CAVITATION",
     "confidence": 0.99,
-    "evidence": "PolarMind: suction_pressure_kpa z=-18.7, discharge_pressure_kpa z=-5.6, vibration_crest_factor z=+3.7",
+    "evidence": "PolarMind: suction_pressure_kpa 18.7, discharge_pressure_kpa 5.6, vibration_crest_factor 3.7",
     "recommended_action": "Check the suction strainer, level and valve opening. Reduce flow if the operator approves.",
     "alert_time_utc": "2025-10-09T21:45:00Z"
   },
@@ -50,7 +50,7 @@
     "event_class": "MACHINE",
     "fault_type": "BEARING_WEAR",
     "confidence": 0.61,
-    "evidence": "PolarMind: suction_pressure_kpa z=-19.3, vibration_rms_mm_s z=+7.3, discharge_pressure_kpa z=-6.8. Crest factor / acceleration leads overall velocity",
+    "evidence": "PolarMind: suction_pressure_kpa 19.3, vibration_rms_mm_s 7.3, discharge_pressure_kpa 6.8. Crest factor / acceleration leads overall velocity",
     "recommended_action": "Inspect the pump bearing and lubrication. Plan a bearing change before velocity and temperature rise.",
     "alert_time_utc": "2025-10-09T21:51:00Z"
   },
@@ -61,7 +61,7 @@
     "event_class": "MACHINE",
     "fault_type": "MISALIGNMENT",
     "confidence": 0.05,
-    "evidence": "PolarMind: suction_pressure_kpa z=-20.4, discharge_pressure_kpa z=-10.3, motor_current_a z=-3.4, 2x/1x vibration = 3.61",
+    "evidence": "PolarMind: suction_pressure_kpa 20.4, discharge_pressure_kpa 10.3, motor_current_a 3.4, 2x/1x vibration = 3.61",
     "recommended_action": "Check coupling alignment, especially if the set was recently reassembled.",
     "alert_time_utc": "2025-10-10T09:04:00Z"
   }

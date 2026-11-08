@@ -8,7 +8,7 @@ from utils.demo_data import get_pump_data, get_telemetry
 from utils.alert_display import render_current_alert_accordion
 from utils.telemetry_charts import SENSOR_CHART_OPTIONS, render_sensor_charts
 
-from utils.ui_components import setup_page, render_sidebar, page_header
+from utils.ui_components import setup_page, render_sidebar
 
 
 # ==================================================
@@ -19,7 +19,38 @@ setup_page("Pump Monitoring", "📈")
 
 render_sidebar()
 
-page_header("Pump Monitoring", "Explore pump telemetry and operating conditions.")
+st.markdown(
+    """
+    <style>
+    .st-key-pump_monitoring_header [data-testid="stCaptionContainer"] p {
+        font-size: 1.15rem;
+    }
+    .st-key-monitoring_pump [data-testid="stWidgetLabel"] p,
+    .st-key-live_mqtt_telemetry [data-testid="stWidgetLabel"] p,
+    .st-key-sensor_measurement_search [data-testid="stWidgetLabel"] p {
+        font-size: 1.1rem;
+    }
+    .st-key-live_mqtt_telemetry label > span + div {
+        border: 2px solid #0077b6 !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 2px #ffffff;
+        transform: scale(1.3);
+        transform-origin: left center;
+        margin-right: 0.55rem;
+    }
+    .st-key-live_mqtt_telemetry
+    label:has(input[role="switch"]:checked) > span + div {
+        background-color: #0077b6 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.container(key="pump_monitoring_header"):
+    st.title("Pump Monitoring")
+    st.caption("Explore pump telemetry and operating conditions.")
+    st.divider()
 
 
 # ==================================================
@@ -55,14 +86,12 @@ if (
 
 selected_pump = st.selectbox("Select Equipment", pump_ids, key="monitoring_pump")
 
-live_mode = st.toggle("Live telemetry", value=True, key="live_mqtt_telemetry")
+live_mode = st.toggle("Live telemetry", value=False, key="live_mqtt_telemetry")
 
 
 # ==================================================
 # LOAD SELECTED PUMP DATA
 # ==================================================
-
-pump_info = pumps[pumps["pump_id"] == selected_pump].iloc[0]
 
 subscriber_key = "pump_mqtt_subscriber"
 subscriber = st.session_state.get(subscriber_key)
@@ -140,15 +169,13 @@ st.divider()
 
 st.subheader("Equipment Overview")
 
-c1, c2, c3 = st.columns(3)
+c1, c2 = st.columns(2)
 
 c1.metric("Pump ID", selected_pump)
 
-c2.metric("Instrumentation", pump_info["tier"])
-
 operating_status = str(latest.get("operating_mode", "Unknown")).upper()
 
-c3.metric("Operating Mode", operating_status)
+c2.metric("Operating Mode", operating_status)
 
 
 # ==================================================
@@ -159,13 +186,57 @@ st.divider()
 
 st.subheader("Sensor Measurements")
 
+if live_mode:
+    st.markdown(
+        """
+        <div style="background-color: #ffffff; color: #0077b6; font-size: 1.05rem; font-weight: bold; padding: 0.75rem 1rem; border-radius: 0.5rem;">
+            📡 Live data is being transmitted from actual equipment simulations running remotely.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.markdown(
+    """
+    <style>
+    div[data-testid="stTextInput"] input {
+        background-color: #f2f8fd;
+        color: #1f2937;
+    }
+    div[data-testid="stTextInput"] input::placeholder {
+        color: #52677a;
+        opacity: 1;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.text_input(
+    "Search sensor measurements",
+    placeholder="Search by sensor name, field, or unit...",
+    key="sensor_measurement_search",
+)
+sensor_search = st.session_state["sensor_measurement_search"]
+search_term = sensor_search.casefold()
+matching_sensor_options = {
+    label: (column, unit)
+    for label, (column, unit) in SENSOR_CHART_OPTIONS.items()
+    if search_term in f"{label} {column} {unit}".casefold()
+}
+
 # ==================================================
 # DISPLAY AVAILABLE SENSOR CHARTS
 # ==================================================
 
 render_sensor_charts(
     data,
-    empty_message="No valid sensor measurements available for this pump.",
+    empty_message=(
+        "No valid sensor measurements match your search."
+        if sensor_search
+        else "No valid sensor measurements available for this pump."
+    ),
+    sensor_options=matching_sensor_options,
 )
 
 
@@ -179,7 +250,7 @@ st.subheader("Latest Sensor Readings")
 
 latest_readings = []
 
-for label, (column, unit) in SENSOR_CHART_OPTIONS.items():
+for label, (column, unit) in matching_sensor_options.items():
 
     if column not in data.columns:
         continue
@@ -198,7 +269,11 @@ if latest_readings:
     st.dataframe(pd.DataFrame(latest_readings), width="stretch", hide_index=True)
 
 else:
-    st.info("No valid sensor readings available.")
+    st.info(
+        "No valid sensor readings match your search."
+        if sensor_search
+        else "No valid sensor readings available."
+    )
 
 
 # ==================================================

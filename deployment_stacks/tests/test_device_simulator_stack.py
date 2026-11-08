@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import aws_cdk as cdk
@@ -86,10 +87,37 @@ def test_each_task_has_its_pump_specific_command_and_role(
     assert "--model-history-start" not in pump_07
     assert pump_07[pump_07.index("--start") + 1] == "2025-05-13T00:00:00Z"
     assert all("--listen-for-replay" in command for command in commands)
+    assert all("--loop" in command for command in commands)
     assert all(command[command.index("--data") + 1] == "/app/data/full" for command in commands)
     assert all(command[command.index("--region") + 1] == {"Ref": "AWS::Region"} for command in commands)
 
     template.resource_count_is("AWS::IAM::Role", 4)
+
+
+def test_retained_alert_permission_is_limited_to_alert_topics(
+    tmp_path: Path,
+) -> None:
+    template = Template.from_stack(_stack(tmp_path))
+    retained_permissions = []
+    for resource in template.find_resources("AWS::IAM::Policy").values():
+        statements = resource["Properties"]["PolicyDocument"]["Statement"]
+        if not isinstance(statements, list):
+            statements = [statements]
+        retained_permissions.extend(
+            statement
+            for statement in statements
+            if "iot:RetainPublish" in (
+                statement["Action"]
+                if isinstance(statement["Action"], list)
+                else [statement["Action"]]
+            )
+        )
+
+    assert len(retained_permissions) == 2
+    resources = [json.dumps(statement["Resource"]) for statement in retained_permissions]
+    assert any("devices/PUMP-06/alerts" in resource for resource in resources)
+    assert any("devices/PUMP-07/alerts" in resource for resource in resources)
+    assert all("telemetry" not in resource for resource in resources)
 
 
 def test_pump_config_rejects_history_after_replay_start() -> None:

@@ -60,6 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Repeat the selected telemetry range continuously until stopped.",
+    )
+    parser.add_argument(
         "--start",
         default=DEFAULT_START,
         help=(
@@ -188,6 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             end=args.end,
                             limit=args.limit,
                             speed=args.speed,
+                            loop=args.loop,
                             stop_event=current_stop_event,
                             predictor=predictor,
                         )
@@ -233,6 +239,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 end=args.end,
                 limit=args.limit,
                 speed=args.speed,
+                loop=args.loop,
                 predictor=create_predictor(
                     args.model,
                     data_dir=args.data,

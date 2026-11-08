@@ -218,16 +218,23 @@ class PumpSimulatorStack(Stack):
         publish_topics = [
             self._iot_arn("topic", f"devices/{pump.asset}/telemetry"),
         ]
+        alert_topic: str | None = None
         if pump.model != "none":
-            publish_topics.append(
-                self._iot_arn("topic", f"devices/{pump.asset}/alerts")
-            )
+            alert_topic = self._iot_arn("topic", f"devices/{pump.asset}/alerts")
+            publish_topics.append(alert_topic)
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["iot:Publish"],
                 resources=publish_topics,
             )
         )
+        if alert_topic is not None:
+            task_role.add_to_policy(
+                iam.PolicyStatement(
+                    actions=["iot:RetainPublish"],
+                    resources=[alert_topic],
+                )
+            )
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["iot:Connect"],
@@ -273,6 +280,7 @@ class PumpSimulatorStack(Stack):
             "--asset",
             pump.asset,
             "--listen-for-replay",
+            "--loop",
         ]
         if pump.model_history_start is not None:
             command.extend(

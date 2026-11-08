@@ -24,7 +24,8 @@ render_current_alert_accordion({
     assert app.expander[0].label == (
         "Current system status — Fault detected: BEARING_WEAR"
     )
-    assert any("Current fault status" in item.value for item in app.error)
+    assert not any("Current fault status" in item.value for item in app.error)
+    assert any("#b91c1c" in item.value for item in app.markdown)
 
 
 def test_current_alert_accordion_shows_waiting_state_without_history() -> None:
@@ -44,6 +45,27 @@ render_current_alert_accordion(None)
     assert any(
         "Waiting for the first status update from this pump." in item.value
         for item in app.info
+    )
+
+
+def test_current_alert_accordion_colors_healthy_status_green() -> None:
+    app = AppTest.from_string(
+        """
+from utils.alert_display import render_current_alert_accordion
+
+render_current_alert_accordion({"phase": "watching"})
+"""
+    ).run()
+
+    assert not app.exception
+    assert any("#15803d" in item.value for item in app.markdown)
+    assert not any(
+        "System status OK — no active fault identified." in item.value
+        for item in app.success
+    )
+    assert not any(
+        "The simulator is watching the pump." in item.value
+        for item in app.markdown
     )
 
 

@@ -234,6 +234,7 @@ def test_replay_publisher_uses_device_topic_and_realtime_delays(
         message["topic"] == device.topic and message["qos"] == 1
         for message in client.publications
     )
+    assert all("retain" not in message for message in client.publications)
     assert json.loads(client.publications[0]["payload"])["sample_count"] == 1.5
 
 
@@ -294,6 +295,8 @@ def test_publisher_warms_predictor_and_publishes_replay_alert(
     )
     assert alert["topic"] == "devices/PUMP-06/alerts"
     assert alert["qos"] == 1
+    assert alert["retain"] is True
+    assert alert["messageExpiry"] == 24 * 60 * 60
     assert json.loads(alert["payload"]) == {
         "fault_type": "TEST_ALERT",
         "alert_time_utc": "2025-10-09T00:02:00Z",
@@ -338,10 +341,84 @@ def test_publisher_publishes_replay_status_but_suppresses_warmup(tmp_path) -> No
     ]
     assert len(alerts) == 1
     assert alerts[0]["qos"] == 1
+    assert alerts[0]["retain"] is True
+    assert alerts[0]["messageExpiry"] == 24 * 60 * 60
     assert json.loads(alerts[0]["payload"]) == {
         "phase": "watching",
         "fault_type": None,
     }
+
+
+def test_publisher_retains_only_changed_prediction_states(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    timestamps = [
+        "2025-10-09T00:00:00Z",
+        "2025-10-09T00:01:00Z",
+        "2025-10-09T00:02:00Z",
+        "2025-10-09T00:03:00Z",
+    ]
+    minutes = [
+        ReplayMinute(
+            timestamp=pd.Timestamp(timestamp),
+            telemetry={"timestamp_utc": timestamp},
+            features={},
+            is_warmup=False,
+        )
+        for timestamp in timestamps
+    ]
+    monkeypatch.setattr(
+        publisher,
+        "iter_replay_minutes",
+        lambda *_args, **_kwargs: iter(minutes),
+    )
+    client = FakeIotDataClient()
+    device = Device(
+        thing_name="PUMP-06",
+        region="us-east-1",
+        endpoint="example-ats.iot.us-east-1.amazonaws.com",
+        topic="devices/PUMP-06/telemetry",
+    )
+    phases = iter(("watching", "watching", "alert", "watching"))
+
+    class StatusPredictor:
+        def process_minute(
+            self, replay_minute: ReplayMinute
+        ) -> dict[str, object]:
+            phase = next(phases)
+            prediction: dict[str, object] = {
+                "minute_utc": replay_minute.timestamp.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+                "phase": phase,
+                "fault_type": "TEST_ALERT" if phase == "alert" else None,
+            }
+            if phase == "alert":
+                prediction["alert_time_utc"] = prediction["minute_utc"]
+            return prediction
+
+    count = publisher.publish_replay_telemetry(
+        client,  # type: ignore[arg-type]
+        device,
+        data_dir=tmp_path,
+        asset="PUMP-06",
+        speed=0,
+        predictor=StatusPredictor(),
+    )
+
+    assert count == len(minutes)
+    alerts = [
+        publication
+        for publication in client.publications
+        if publication["topic"] == "devices/PUMP-06/alerts"
+    ]
+    assert [json.loads(alert["payload"])["phase"] for alert in alerts] == [
+        "watching",
+        "alert",
+        "watching",
+    ]
+    assert all(alert["retain"] is True for alert in alerts)
+    assert all(alert["messageExpiry"] == 24 * 60 * 60 for alert in alerts)
 
 
 def test_replay_publisher_stops_when_stop_event_is_set(tmp_path) -> None:
@@ -376,6 +453,51 @@ def test_replay_publisher_stops_when_stop_event_is_set(tmp_path) -> None:
     assert len(client.publications) == 1
 
 
+def test_replay_publisher_loops_until_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    stop_event = Event()
+    replay_passes = 0
+
+    def replay_minutes(*_args, **_kwargs):
+        nonlocal replay_passes
+        replay_passes += 1
+        yield ReplayMinute(
+            timestamp=pd.Timestamp("2025-10-09T00:00:00Z"),
+            telemetry={"timestamp_utc": "2025-10-09T00:00:00+00:00"},
+            features={},
+            is_warmup=False,
+        )
+
+    class StopAfterSecondPublishClient(FakeIotDataClient):
+        def publish(self, **kwargs: Any) -> dict[str, Any]:
+            response = super().publish(**kwargs)
+            if len(self.publications) == 2:
+                stop_event.set()
+            return response
+
+    monkeypatch.setattr(publisher, "iter_replay_minutes", replay_minutes)
+    client = StopAfterSecondPublishClient()
+    device = Device(
+        thing_name="PUMP-06",
+        region="us-east-1",
+        endpoint="example-ats.iot.us-east-1.amazonaws.com",
+        topic="devices/PUMP-06/telemetry",
+    )
+
+    count = publisher.publish_replay_telemetry(
+        client,  # type: ignore[arg-type]
+        device,
+        data_dir="data/full",
+        asset="PUMP-06",
+        speed=0,
+        loop=True,
+        stop_event=stop_event,
+    )
+
+    assert count == 2
+    assert replay_passes == 2
+    assert len(client.publications) == 2
+
+
 def test_replay_cli_start_is_overridable_and_has_requested_default() -> None:
     parser = _build_parser()
     default_args = parser.parse_args(["--asset", "PUMP-06", "--data", "data/full"])
@@ -389,16 +511,19 @@ def test_replay_cli_start_is_overridable_and_has_requested_default() -> None:
             "2025-10-10T00:00:00Z",
             "--model-history-start",
             "2025-10-08T00:00:00Z",
+            "--loop",
         ]
     )
 
     assert default_args.start == "2025-10-09T00:00:00Z"
     assert default_args.speed == 1.0
     assert default_args.model == "polar-mind"
+    assert default_args.loop is False
     assert default_args.thing_name == "PUMP-06"
     assert custom_args.start == "2025-10-10T00:00:00Z"
     assert default_args.model_history_start is None
     assert custom_args.model_history_start == "2025-10-08T00:00:00Z"
+    assert custom_args.loop is True
 
 
 def test_replay_cli_requires_a_dataset() -> None:

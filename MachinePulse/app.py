@@ -10,6 +10,8 @@ from utils.ui_components import (
 
 from utils.demo_data import get_pump_data
 
+PUMP_COUNT = 12
+
 
 # ==================================================
 # PAGE CONFIGURATION
@@ -41,20 +43,6 @@ if pumps.empty:
 
 pumps = pumps.sort_values("pump_id").reset_index(drop=True)
 
-operating_modes = (
-    pumps["status"]
-    .fillna("UNKNOWN")
-    .astype(str)
-    .str.upper()
-)
-
-running = int((operating_modes == "RUNNING").sum())
-stopped = int((operating_modes == "STOPPED").sum())
-locked_out = int(
-    operating_modes.isin(["LOCKED_OUT", "LOCKED OUT"]).sum()
-)
-unknown = len(pumps) - running - stopped - locked_out
-
 
 # ==================================================
 # KPI CARDS
@@ -62,27 +50,17 @@ unknown = len(pumps) - running - stopped - locked_out
 
 st.subheader("System Overview")
 
-kpi_columns = st.columns(4)
+kpi_columns = st.columns(3)
 
 kpis = [
-    ("🏭", "Monitored Pumps", len(pumps), "Total monitored equipment"),
-    ("📈", "Running", running, "Operating pumps"),
-    ("⚠️", "Locked Out", locked_out, "Equipment locked out"),
-    ("⏸️", "Stopped", stopped, "Not operating"),
+    ("Monitored Pumps", PUMP_COUNT, "Total monitored equipment"),
+    ("Online", PUMP_COUNT, "Connected to the system"),
+    ("Offline", 0, "Not connected to the system"),
 ]
 
-for column, (icon, label, value, help_text) in zip(kpi_columns, kpis):
+for column, (label, value, help_text) in zip(kpi_columns, kpis):
     with column:
-        with st.container(border=True):
-            st.markdown(
-                f"<div style='font-size:25px'>{icon}</div>",
-                unsafe_allow_html=True
-            )
-            st.metric(label, value, help=help_text)
-
-
-if unknown > 0:
-    st.caption(f"Additional pumps with unknown operating status: {unknown}")
+        st.metric(label, value, help=help_text)
 
 st.divider()
 
@@ -94,88 +72,161 @@ st.divider()
 st.subheader("Equipment Health")
 st.markdown(
     '<div class="pg-section-caption">'
-    'Select a pump to open its individual monitoring page.'
+    'Browse the machine hierarchy and select a pump to open its '
+    'individual monitoring page.'
     '</div>',
     unsafe_allow_html=True
 )
 
-# Four compact cards per row, as in the proposed mockup
+equipment_hierarchy = [
+    (
+        "Machine 01 · Raw Water Intake",
+        [
+            (
+                "Intake Assembly",
+                [
+                    ("Suction Manifold", ("PUMP-01", "PUMP-02")),
+                    ("Transfer Skid", ("PUMP-03",)),
+                ],
+            ),
+            (
+                "Screen Wash Unit",
+                [
+                    ("Wash Circuit", ("PUMP-04",)),
+                ],
+            ),
+        ],
+    ),
+    (
+        "Machine 02 · Treatment & Filtration",
+        [
+            (
+                "Filtration Train A",
+                [
+                    ("Feed Stage", ("PUMP-05", "PUMP-06")),
+                    ("Backwash Stage", ("PUMP-07",)),
+                ],
+            ),
+            (
+                "Chemical Dosing Unit",
+                [
+                    ("Dosing Module", ("PUMP-08",)),
+                ],
+            ),
+        ],
+    ),
+    (
+        "Machine 03 · Distribution & Utilities",
+        [
+            (
+                "Distribution Train",
+                [
+                    ("Header Pressurization", ("PUMP-09", "PUMP-10")),
+                    ("Recirculation Loop", ("PUMP-11",)),
+                ],
+            ),
+            (
+                "Cooling Water Circuit",
+                [
+                    ("Cooling Module", ("PUMP-12",)),
+                ],
+            ),
+        ],
+    ),
+]
+
+pumps_by_id = {
+    str(pump["pump_id"]): pump
+    for _, pump in pumps.iterrows()
+}
+
 cards_per_row = 4
 
-for start in range(0, len(pumps), cards_per_row):
-    columns = st.columns(cards_per_row)
-    batch = pumps.iloc[start:start + cards_per_row]
-
-    for column, (_, pump) in zip(columns, batch.iterrows()):
-        pump_id = str(pump["pump_id"])
-        status = str(pump.get("status", "UNKNOWN"))
-        tier = str(pump.get("tier", "Unknown"))
-
-        with column:
-            with st.container(border=True):
-                top_left, top_right = st.columns([1.15, 1])
-
-                with top_left:
-                    st.markdown(
-                        f'<div class="pg-pump-title">{pump_id}</div>',
-                        unsafe_allow_html=True
-                    )
-
-                with top_right:
-                    render_status_badge(status)
-
-                st.markdown(
-                    f'<div class="pg-pump-meta">'
-                    f'{tier} · Instrumentation available'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-
-                if st.button(
-                    "View Pump →",
-                    key=f"monitor_{pump_id}",
-                    width="stretch"
-                ):
-                    st.session_state["selected_pump"] = pump_id
-                    st.switch_page("pages/2_Pump_Monitoring.py")
-
-
-# ==================================================
-# RECENT AI ALERTS AND SYSTEM INFORMATION
-# ==================================================
-
-st.divider()
-
-left, right = st.columns([1, 1.2])
-
-with left:
-    with st.container(border=True):
-        st.subheader("🔔 Recent AI Alerts")
-        st.info(
-            "No connected AI alerts are available yet. "
-            "Fault predictions will appear here once the detection "
-            "model is integrated."
+for machine_index, (machine_name, components) in enumerate(
+    equipment_hierarchy,
+    start=1
+):
+    with st.container(border=True, key=f"machine-group-{machine_index}"):
+        st.markdown(
+            '<div class="pg-machine-heading">'
+            f'<span class="pg-machine-kicker">MACHINE {machine_index:02d}</span>'
+            f'<span class="pg-machine-title">{machine_name.split(" · ", 1)[1]}</span>'
+            '</div>',
+            unsafe_allow_html=True
         )
 
-with right:
-    with st.container(border=True):
-        st.subheader("ⓘ System Information")
+        for component_name, subcomponents in components:
+            st.markdown(
+                '<div class="pg-tree-component">'
+                f'<span class="pg-tree-branch">├─</span>'
+                f'<span>{component_name}</span>'
+                '</div>',
+                unsafe_allow_html=True
+            )
 
-        mode = st.session_state.get("data_mode", "Simulated Live")
+            for subcomponent_name, pump_ids in subcomponents:
+                with st.expander(
+                    f"└─ {subcomponent_name}",
+                    expanded=True
+                ):
+                    available_pumps = [
+                        pumps_by_id[pump_id]
+                        for pump_id in pump_ids
+                        if pump_id in pumps_by_id
+                    ]
+                    for start in range(
+                        0,
+                        len(available_pumps),
+                        cards_per_row
+                    ):
+                        batch = available_pumps[
+                            start:start + cards_per_row
+                        ]
+                        columns = st.columns(cards_per_row)
 
-        info1, info2, info3 = st.columns(3)
+                        for column, pump in zip(columns, batch):
+                            pump_id = str(pump["pump_id"])
+                            tier = str(pump.get("tier", "Unknown"))
 
-        info1.markdown("**Data Mode**")
-        info1.caption(mode)
+                            with column:
+                                with st.container(
+                                    key=f"pump-card-{pump_id}"
+                                ):
+                                    top_left, top_right = st.columns(
+                                        [1.15, 1]
+                                    )
 
-        info2.markdown("**Telemetry Source**")
-        info2.caption("Historical JSONL files")
+                                    with top_left:
+                                        st.markdown(
+                                            '<div class="pg-pump-title">'
+                                            f'{pump_id}</div>',
+                                            unsafe_allow_html=True
+                                        )
 
-        info3.markdown("**Operating Mode**")
-        info3.caption("READ ONLY")
+                                    with top_right:
+                                        render_status_badge("ONLINE")
+
+                                    st.markdown(
+                                        '<div class="pg-pump-meta">'
+                                        f'{tier} · Instrumentation available'
+                                        '</div>',
+                                        unsafe_allow_html=True
+                                    )
+
+                                    if st.button(
+                                        "View Pump →",
+                                        key=f"monitor_{pump_id}",
+                                        width="stretch"
+                                    ):
+                                        st.session_state[
+                                            "selected_pump"
+                                        ] = pump_id
+                                        st.switch_page(
+                                            "pages/2_Pump_Monitoring.py"
+                                        )
 
 
 st.caption(
-    "Operating modes are obtained from the uploaded JSONL telemetry. "
-    "AI fault predictions are displayed only when model outputs are connected."
+    "Illustrative equipment hierarchy. Pump availability is hardcoded "
+    "for this demo."
 )

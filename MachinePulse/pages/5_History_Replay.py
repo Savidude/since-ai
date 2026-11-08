@@ -31,8 +31,7 @@ from utils.what_if import (
 
 from utils.ui_components import (
     setup_page,
-    render_sidebar,
-    page_header
+    render_sidebar
 )
 
 REPLAY_SESSION_KEY = "history_replay_session"
@@ -241,10 +240,9 @@ requested_fault_severity = st.session_state.pop(
 setup_page("History & Replay", "⏪")
 render_sidebar()
 
-page_header(
-    "Historical Analysis & Replay",
-    "Investigate previous pump conditions and fault development."
-)
+st.title("Historical Analysis & Replay")
+st.subheader("Investigate previous pump conditions and fault development.")
+st.divider()
 
 
 # ==================================================
@@ -269,10 +267,12 @@ if (
 ):
     st.session_state["history_pump"] = pump_ids[0]
 
+st.subheader("Select Pump")
 pump = st.selectbox(
     "Select Pump",
     pump_ids,
-    key="history_pump"
+    key="history_pump",
+    label_visibility="collapsed"
 )
 
 replay_session = st.session_state.get(REPLAY_SESSION_KEY)
@@ -444,20 +444,6 @@ if requested_target_timestamp is not None:
 
 
 # ==================================================
-# PLAYBACK SPEED
-# ==================================================
-
-st.subheader("Telemetry Playback")
-
-speed = st.select_slider(
-    "Playback Speed",
-    options=[1, 2, 5, 10],
-    value=1,
-    format_func=lambda x: f"{x}x"
-)
-
-
-# ==================================================
 # CALENDAR AND TIME SEARCH
 # ==================================================
 
@@ -470,7 +456,41 @@ st.caption(
     "historical measurement. All times are UTC."
 )
 
-col1, col2, col3 = st.columns([2, 2, 1])
+st.markdown(
+    """
+    <style>
+    [class*="st-key-history_search_button"] button {
+        color: #15395f !important;
+        background: #e8f1ff !important;
+        border-color: #bfd1e5 !important;
+    }
+
+    [class*="st-key-history_search_button"] button:hover {
+        color: #10213d !important;
+        background: #dceaff !important;
+        border-color: #a9bfd9 !important;
+    }
+
+    [class*="st-key-history_replay_button"] button {
+        color: #15395f !important;
+        background: #e8f1ff !important;
+        border-color: #bfd1e5 !important;
+    }
+
+    [class*="st-key-history_replay_button"] button:hover {
+        color: #10213d !important;
+        background: #dceaff !important;
+        border-color: #a9bfd9 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+col1, col2, col3 = st.columns(
+    [2, 2, 1],
+    vertical_alignment="bottom"
+)
 
 with col1:
 
@@ -490,13 +510,11 @@ with col2:
     )
 
 with col3:
-
-    st.write("")
-    st.write("")
-
     search_clicked = st.button(
         "🔍 Search",
-        width="stretch"
+        width="stretch",
+        type="secondary",
+        key="history_search_button"
     )
 
 
@@ -688,31 +706,21 @@ st.divider()
 
 st.subheader("Operating Conditions")
 
-c1, c2, c3 = st.columns(3)
-
-c1.metric(
-    "Operating Mode",
-    str(selected.get("operating_mode", "Unknown"))
-)
-
-current = selected.get("motor_current_a")
-
-c2.metric(
-    "Motor Current",
-    f"{current:.2f} A"
-    if pd.notna(current) else "N/A"
-)
-
-temperature = selected.get("fluid_temp_c")
-
-c3.metric(
-    "Fluid Temperature",
-    f"{temperature:.1f} °C"
-    if pd.notna(temperature) else "N/A"
+st.markdown(
+    """
+    <style>
+    [class*="st-key-history_what_if_container"] [data-testid="stExpander"] {
+        border: 2px solid #8aaed6 !important;
+        border-radius: 12px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 if replay_fault_name and replay_fault_timestamp is not None:
-    with st.expander(
+    what_if_container = st.container(key="history_what_if_container")
+    with what_if_container.expander(
         "🧪 Try a what-if: explore a maintenance action",
         expanded=True,
     ):

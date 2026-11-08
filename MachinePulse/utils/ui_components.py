@@ -19,7 +19,7 @@ def setup_page(title, icon="🏭"):
             --pg-blue: #1769e0;
             --pg-text: #10213d;
             --pg-muted: #64748b;
-            --pg-border: #dce5f0;
+            --pg-border: #cbd5e1;
             --pg-bg: #f4f7fb;
         }
 
@@ -68,7 +68,7 @@ def setup_page(title, icon="🏭"):
             background: #ffffff;
             border: 1px solid var(--pg-border);
             border-radius: 14px;
-            padding: 14px 16px;
+            padding: 8px 12px;
             box-shadow: 0 2px 8px rgba(15, 35, 65, 0.045);
         }
 
@@ -87,10 +87,91 @@ def setup_page(title, icon="🏭"):
             background: #ffffff;
         }
 
+        div[class*="st-key-machine-group-"] {
+            border: 1px solid #cbd5e1;
+            border-radius: 14px;
+            background: #ffffff;
+            padding: 14px 16px;
+            margin-bottom: 14px;
+        }
+
+        div[class*="st-key-machine-group-"] [data-testid="stExpander"] {
+            background: #f3f7fc;
+            border: 1px solid #d5e0ee;
+            border-radius: 10px;
+        }
+
+        div[class*="st-key-machine-group-"] [data-testid="stExpander"] summary {
+            background: #f3f7fc;
+            border-radius: 10px;
+            color: #18395f;
+        }
+
+        div[class*="st-key-pump-card-"] {
+            border: 2px solid #aebed0 !important;
+            border-radius: 13px;
+            background: #ffffff;
+            padding: 12px;
+        }
+
+        .pg-machine-heading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .pg-machine-kicker {
+            color: #1769e0;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+        }
+
+        .pg-machine-title {
+            color: #10213d;
+            font-size: 17px;
+            font-weight: 750;
+        }
+
+        .pg-tree-component {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin: 13px 0 5px 10px;
+            padding: 7px 10px;
+            border-left: 3px solid #1769e0;
+            border-radius: 0 8px 8px 0;
+            background: #dce7f3;
+            color: #18395f;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .pg-tree-branch {
+            color: #7b8da4;
+            font-family: monospace;
+        }
+
         .stButton > button {
             border-radius: 9px;
             font-weight: 600;
             border-color: #d5dfec;
+        }
+
+        [class*="st-key-monitor_"] button,
+        button[class*="st-key-monitor_"] {
+            color: #15395f !important;
+            background: #e8f1ff !important;
+            border-color: #bfd1e5 !important;
+        }
+
+        [class*="st-key-monitor_"] button:hover,
+        button[class*="st-key-monitor_"]:hover {
+            color: #10213d !important;
+            background: #dceaff !important;
+            border-color: #a9bfd9 !important;
         }
 
         .stButton > button[kind="primary"] {
@@ -184,12 +265,12 @@ def setup_page(title, icon="🏭"):
             white-space: nowrap;
         }
 
-        .pg-running {
+        .pg-online {
             color: #087443;
             background: #d9f5e6;
         }
 
-        .pg-stopped {
+        .pg-offline {
             color: #475569;
             background: #e8edf3;
         }
@@ -247,7 +328,7 @@ def render_sidebar():
                 🏭 MachinePulse
             </div>
             <div style="font-size: 11px; color: #b8c8dc; margin-top: 5px;">
-                Predictive Maintenance Platform
+                Feel the pulse. Prevent the Failure
             </div>
         </div>
         """,
@@ -269,33 +350,14 @@ def render_sidebar():
         icon="🔍"
     )
     st.sidebar.page_link(
-        "pages/4_Maintenance.py",
-        label="Maintenance",
-        icon="🔧"
-    )
-    st.sidebar.page_link(
         "pages/5_History_Replay.py",
         label="History Replay",
         icon="📅"
     )
 
     st.sidebar.divider()
-    st.sidebar.subheader("System Configuration")
-
-    if "data_mode" not in st.session_state:
-        st.session_state["data_mode"] = "Simulated Live"
-
-    mode = st.sidebar.radio(
-        "Data Mode",
-        ["Simulated Live", "Historical Replay"],
-        key="data_mode"
-    )
-
-    st.sidebar.divider()
     st.sidebar.success("System: Demo Ready")
     st.sidebar.info("Operating Mode: READ ONLY")
-
-    return mode
 
 
 def page_header(title, description):
@@ -344,12 +406,12 @@ def render_hero_banner(
 def render_status_badge(status):
     status_text = str(status or "UNKNOWN").strip().upper()
 
-    if status_text == "RUNNING":
-        css_class = "pg-running"
-        label = "● Running"
-    elif status_text == "STOPPED":
-        css_class = "pg-stopped"
-        label = "● Stopped"
+    if status_text == "ONLINE":
+        css_class = "pg-online"
+        label = "● Online"
+    elif status_text == "OFFLINE":
+        css_class = "pg-offline"
+        label = "● Offline"
     elif status_text in {"LOCKED_OUT", "LOCKED OUT"}:
         css_class = "pg-locked"
         label = "● Locked Out"

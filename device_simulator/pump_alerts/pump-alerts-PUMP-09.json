@@ -6,7 +6,7 @@
     "event_class": "MACHINE",
     "fault_type": "MISALIGNMENT",
     "confidence": 0.99,
-    "evidence": "PolarMind: vibration_rms_mm_s z=+16.4, motor_winding_temp_c z=-12.6, motor_current_a z=+3.6, 2x/1x vibration = 2.05",
+    "evidence": "PolarMind: vibration_rms_mm_s 16.4, motor_winding_temp_c 12.6, motor_current_a 3.6, 2x/1x vibration = 2.05",
     "recommended_action": "Check coupling alignment, especially if the set was recently reassembled.",
     "alert_time_utc": "2026-02-10T06:29:00Z"
   },
@@ -28,7 +28,7 @@
     "event_class": "MACHINE",
     "fault_type": "DISCHARGE_RESTRICTION",
     "confidence": 0.99,
-    "evidence": "PolarMind: flow_m3_h z=-11.2, motor_power_kw z=-7.1, discharge_pressure_kpa z=+3.5",
+    "evidence": "PolarMind: flow_m3_h 11.2, motor_power_kw 7.1, discharge_pressure_kpa 3.5",
     "recommended_action": "Check discharge valves and heat-exchanger fouling. Confirm the valve was reopened after maintenance.",
     "alert_time_utc": "2026-02-14T01:14:00Z"
   },
@@ -39,7 +39,7 @@
     "event_class": "MACHINE",
     "fault_type": "AIR_ENTRAINMENT",
     "confidence": 0.99,
-    "evidence": "PolarMind: flow_m3_h z=-26.1, motor_power_kw z=-21.5, suction_pressure_kpa z=-9.9",
+    "evidence": "PolarMind: flow_m3_h 26.1, motor_power_kw 21.5, suction_pressure_kpa 9.9",
     "recommended_action": "Look for air ingestion: low suction level, vortexing or heavy weather. Vent and restore submergence.",
     "alert_time_utc": "2026-02-15T07:45:00Z"
   }

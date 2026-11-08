@@ -26,6 +26,8 @@ The AWS identity needs:
 - `iot:DescribeEndpoint` to find the account's IoT Data Plane endpoint
 - `iot:Publish` for `devices/<thing-name>/telemetry` and, when predictions are
   enabled, `devices/<thing-name>/alerts`
+- `iot:RetainPublish` for `devices/<thing-name>/alerts` when predictions are
+  enabled
 - When using `--listen-for-replay`: `iot:Connect` for the simulator MQTT client,
   `iot:Subscribe` for the replay topic filter, and `iot:Receive` for the replay
   topic
@@ -107,9 +109,12 @@ published and do not count toward `--limit`. If less than 24 hours of prior
 data is available, the model continues learning as replay proceeds. The
 included PolarMind adapter buffers warm-up history rather than scoring each
 historical minute, then starts predicting when replay begins. Warm-up start,
-progress, and completion are logged. Each non-null replay-minute prediction is
-published as JSON to `devices/<thing-name>/alerts`, including no-alert results
-with `fault_type: null`.
+progress, and completion are logged. The current prediction state is published
+as a retained JSON message to `devices/<thing-name>/alerts` when it first
+appears or changes, including transitions back to a no-alert state. The
+per-minute `minute_utc` value is ignored when comparing states, so unchanged
+statuses do not generate repeated messages. Retained alert states expire after
+24 hours; new subscribers receive the latest unexpired state.
 
 Use `--model-history-start` to feed the predictor more than the default 24 hours
 before the first published minute. This is useful for reproducing an offline
@@ -133,7 +138,10 @@ original baseline and all subsequent context, but publishes only from the new
 
 `--speed 1` publishes one minute of telemetry per minute of wall-clock time;
 `--speed 0` publishes as fast as possible. `--limit` caps published minute
-messages, not raw samples.
+messages, not raw samples. Add `--loop` to repeat the selected telemetry range
+continuously; replay restarts at the same `--start` after reaching the end. In
+listen mode, a new replay command stops the current pass and loops from the
+requested timestamp instead.
 
 ## Replay stored telemetry
 
@@ -159,6 +167,9 @@ To replay the dataset from `--start` while listening for replay requests, run:
 ```sh
 device-simulator --thing-name PUMP-06 --data data/full --listen-for-replay
 ```
+
+Add `--loop` to the command to continuously repeat the initial replay and any
+subsequent command-triggered replays.
 
 The simulator subscribes to `devices/PUMP-06/replay`. Send a JSON object with a
 `timestamp_utc` field, for example:

@@ -6,6 +6,7 @@ from pathlib import Path
 import aws_cdk as cdk
 
 from device_simulator_stack import PumpConfig, PumpSimulatorStack
+from machinepulse_ui_stack import MachinePulseUiStack
 from telemetry_ingestion_stack import TelemetryIngestionStack
 
 app = cdk.App()
@@ -38,4 +39,8 @@ simulator_stack.add_stack_dependency(
     telemetry_stack,
     reason="Deploy telemetry ingestion before starting the pump publishers.",
 )
+
+if str(app.node.try_get_context("deployMachinePulseUi")).lower() == "true":
+    MachinePulseUiStack(app, "MachinePulseUiStack")
+
 app.synth()

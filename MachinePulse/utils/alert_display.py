@@ -80,19 +80,20 @@ def current_alert_state_label(
     return "Status update received"
 
 
-def render_alert_status(alert: dict[str, Any]) -> None:
+def render_alert_status(
+    alert: dict[str, Any],
+    *,
+    show_status_summary: bool = True,
+) -> None:
     phase = str(alert.get("phase") or "").lower()
 
-    if is_fault_alert(alert):
-        st.error(f"Current fault status: {phase.upper() or 'ALERT'}")
-    elif phase == "watching":
-        st.success("System status OK — no active fault identified.")
-        st.write(
-            "The simulator is watching the pump. No fault evidence or "
-            "corrective action was reported; continue normal monitoring."
-        )
-    else:
-        st.success("Current fault status: No fault identified")
+    if show_status_summary:
+        if is_fault_alert(alert):
+            st.error(f"Current fault status: {phase.upper() or 'ALERT'}")
+        elif phase == "watching":
+            st.success("System status OK — no active fault identified.")
+        else:
+            st.success("Current fault status: No fault identified")
 
     updated_at = _last_updated(alert)
     if updated_at:
@@ -139,21 +140,56 @@ def render_current_alert_accordion(
     unavailable: bool = False,
 ) -> None:
     state_label = current_alert_state_label(alert, unavailable=unavailable)
-    with st.expander(
-        f"Current system status — {state_label}",
-        expanded=alert is not None and is_fault_alert(alert),
-    ):
-        if alert is not None:
-            if unavailable:
-                st.warning(
-                    "Live status updates are temporarily unavailable. "
-                    "Showing the most recent status received."
-                )
-            render_alert_status(alert)
-        elif unavailable:
-            st.warning("The current system status is temporarily unavailable.")
-        else:
-            st.info("Waiting for the first status update from this pump.")
+    heading_color = None
+    if alert is not None:
+        phase = str(alert.get("phase") or "").lower()
+        if is_fault_alert(alert):
+            heading_color = "#b91c1c"
+        elif phase == "watching":
+            heading_color = "#15803d"
+
+    with st.container(key="current_system_status_accordion"):
+        if heading_color:
+            st.markdown(
+                f"""
+                <style>
+                .st-key-current_system_status_accordion
+                [data-testid="stExpander"] summary,
+                .st-key-current_system_status_accordion
+                [data-testid="stExpander"] summary p {{
+                    color: #e5e7eb !important;
+                    font-size: 1.15rem !important;
+                    font-weight: 700 !important;
+                }}
+                .st-key-current_system_status_accordion
+                [data-testid="stExpander"] summary {{
+                    background-color: {heading_color} !important;
+                    border-radius: 0.5rem;
+                }}
+                .st-key-current_system_status_accordion
+                [data-testid="stExpander"] summary svg {{
+                    fill: #ffffff !important;
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with st.expander(
+            f"Current system status — {state_label}",
+            expanded=alert is not None and is_fault_alert(alert),
+        ):
+            if alert is not None:
+                if unavailable:
+                    st.warning(
+                        "Live status updates are temporarily unavailable. "
+                        "Showing the most recent status received."
+                    )
+                render_alert_status(alert, show_status_summary=False)
+            elif unavailable:
+                st.warning("The current system status is temporarily unavailable.")
+            else:
+                st.info("Waiting for the first status update from this pump.")
 
 
 def render_alert_mini_player(

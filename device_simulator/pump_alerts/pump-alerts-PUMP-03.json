@@ -6,7 +6,7 @@
     "event_class": "MACHINE",
     "fault_type": "DISCHARGE_RESTRICTION",
     "confidence": 0.58,
-    "evidence": "PolarMind: discharge_pressure_kpa z=+7.0, motor_current_a z=-7.0",
+    "evidence": "PolarMind: discharge_pressure_kpa 7.0, motor_current_a 7.0",
     "recommended_action": "Check discharge valves and heat-exchanger fouling. Confirm the valve was reopened after maintenance.",
     "alert_time_utc": "2026-03-03T23:50:00Z"
   },
@@ -17,7 +17,7 @@
     "event_class": "SENSOR",
     "fault_type": "SENSOR_CALIBRATION_SHIFT",
     "confidence": 0.53,
-    "evidence": "PolarMind: discharge_pressure_kpa z=+8.4",
+    "evidence": "PolarMind: discharge_pressure_kpa 8.4",
     "recommended_action": "Check the recent calibration and the impulse line. Verify the reading against a reference.",
     "alert_time_utc": "2026-03-06T08:53:00Z"
   },
@@ -39,7 +39,7 @@
     "event_class": "MACHINE",
     "fault_type": "DISCHARGE_RESTRICTION",
     "confidence": 0.68,
-    "evidence": "PolarMind: discharge_pressure_kpa z=+8.1, motor_current_a z=-3.5",
+    "evidence": "PolarMind: discharge_pressure_kpa 8.1, motor_current_a 3.5",
     "recommended_action": "Check discharge valves and heat-exchanger fouling. Confirm the valve was reopened after maintenance.",
     "alert_time_utc": "2026-03-07T08:11:00Z"
   },

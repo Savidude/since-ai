@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from utils.telemetry_charts import build_sensor_figures
+from utils.telemetry_charts import SENSOR_CHART_OPTIONS, build_sensor_figures
 
 
 def test_build_sensor_figures_uses_shared_sensor_style() -> None:
@@ -39,3 +39,18 @@ def test_build_sensor_figures_skips_missing_or_empty_measurements() -> None:
     )
 
     assert build_sensor_figures(data) == []
+
+
+def test_build_sensor_figures_uses_requested_sensor_options() -> None:
+    data = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(["2025-10-09T21:45:00Z"], utc=True),
+            "motor_current_a": [17.2],
+            "fluid_temp_c": [42.0],
+        }
+    )
+    sensor_options = {"Fluid Temperature": SENSOR_CHART_OPTIONS["Fluid Temperature"]}
+
+    figures = build_sensor_figures(data, sensor_options)
+
+    assert [label for label, _figure in figures] == ["Fluid Temperature"]

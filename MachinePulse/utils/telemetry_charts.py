@@ -23,9 +23,12 @@ SENSOR_CHART_OPTIONS: dict[str, tuple[str, str]] = {
 }
 
 
-def build_sensor_figures(data: pd.DataFrame) -> list[tuple[str, Figure]]:
+def build_sensor_figures(
+    data: pd.DataFrame,
+    sensor_options: dict[str, tuple[str, str]] = SENSOR_CHART_OPTIONS,
+) -> list[tuple[str, Figure]]:
     figures: list[tuple[str, Figure]] = []
-    for label, (column, unit) in SENSOR_CHART_OPTIONS.items():
+    for label, (column, unit) in sensor_options.items():
         if column not in data.columns:
             continue
 
@@ -57,8 +60,9 @@ def render_sensor_charts(
     data: pd.DataFrame,
     *,
     empty_message: str,
+    sensor_options: dict[str, tuple[str, str]] = SENSOR_CHART_OPTIONS,
 ) -> int:
-    figures = build_sensor_figures(data)
+    figures = build_sensor_figures(data, sensor_options)
     for label, figure in figures:
         with st.container(border=True):
             st.markdown(f"#### {label}")
